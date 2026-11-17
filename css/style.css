@@ -407,3 +407,10 @@ body.has-modal .toast { padding: 6px 12px; font-size: 12px; opacity: .95; }
 .qty .ql { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; } .qty .ql small { font-size: 10px; color: var(--ink); font-weight: 800; }
 @media (max-height: 520px) { .qty .ql small { font-size: 9px; } }
 .wage-total { font-weight: 900; font-size: 15px; background: #fff4e8; border-radius: 12px; padding: 6px 10px; margin-bottom: 4px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+/* みんなの店 */
+.room-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
+.room-list > .muted { width: 100%; }
+.room-chip { border: 2px solid #f4efea; background: #fffaf6; border-radius: 12px; padding: 5px 10px; font-weight: 800; font-size: 13px; color: var(--ink); }
+.room-chip b { font-family: ui-monospace, monospace; color: var(--pri); } .room-chip small { color: var(--muted); }
+.btn.choice { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; width: 100%; }
+.btn.choice small { font-size: 11px; font-weight: 700; opacity: .85; }

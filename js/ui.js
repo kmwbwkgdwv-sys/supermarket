@@ -52,6 +52,14 @@ export function confirmBox(msg, okLabel = 'OK') {
       h('button', { class: 'btn', onclick: () => { fin(true); m.close(); } }, okLabel))], { onClose: () => fin(false) });
   });
 }
+// いくつかの選択肢から1つ選ぶ（キャンセルは null）
+export function choiceBox(title, msg, choices) {
+  return new Promise((res) => {
+    let done = false;
+    const fin = (v) => { if (done) return; done = true; res(v); };
+    const m = modal(title, [h('p', {}, msg), h('div', { class: 'col' }, choices.map(([v, label, sub]) => h('button', { class: 'btn choice', onclick: () => { fin(v); m.close(); } }, label, sub ? h('small', {}, sub) : null)))], { onClose: () => fin(null) });
+  });
+}
 export function promptBox(title, value, { max = 16, placeholder = '' } = {}) {
   return new Promise((res) => {
     const inp = h('input', { class: 'inp', value: value || '', maxlength: max, placeholder });
@@ -167,8 +175,13 @@ function showRoom(app) {
     try { await app.startRoom(id, useLocal.checked || !app.cloud.configured); }
     catch (e) { msg.textContent = '⚠ ' + e.message; }
   };
+  // 前に遊んだルーム（みんなの店）
+  const rooms = (app.profile?.rooms || []).slice(0, 6);
+  const recent = rooms.length ? h('div', { class: 'room-list' }, h('div', { class: 'muted small' }, '🏪 前に遊んだルーム（タップでIDを入れる）'),
+    rooms.map((r) => h('button', { class: 'room-chip', onclick: () => { inp.value = r.id; } }, h('b', {}, r.id), h('span', {}, ` ${r.n || ''}`), h('small', {}, ` Lv.${r.lv || 1}・${r.day || 1}日目`)))) : null;
   screen('center', h('div', { class: 'card hero' }, h('h2', {}, '👥 ルームに参加・作成'),
-    h('p', { class: 'muted' }, '同じルームIDを入力した最大4人で、1つのお店を一緒に経営できます。最初に入った人がホスト（ホストのお店で遊びます）。'),
+    h('p', { class: 'muted' }, '同じルームIDを入力した最大4人で、1つのお店を一緒に経営できます。お店は「みんなの店」としてルームIDごとに保存されるので、ホームに戻っても、次に同じIDで集まれば（誰がホストでも）続きから遊べます。'),
+    recent,
     inp, h('button', { class: 'btn ghost small', onclick: () => { inp.value = randomCode(6); } }, '🎲 ランダムなIDを作る'),
     app.cloud.configured ? h('label', { class: 'chk' }, useLocal, ' 同じ端末のタブ同士でテスト（オフライン）') :
       h('p', { class: 'warnbox' }, '⚠ Firebase未設定のため、同じ端末の別タブとだけ遊べます（READMEの手順で設定するとネット対戦できます）'),

@@ -40,6 +40,17 @@ export class Cloud {
     const v = snap.val();
     return { data: JSON.parse(v.d), t: v.t };
   }
+  // みんなの店（ルームIDごとのお店のデータ）
+  async saveShop(rid, data) {
+    if (!(await this.ready)) return false;
+    await this.F.set(this.ref('shops/' + rid), data);
+    return true;
+  }
+  async loadShop(rid) {
+    if (!(await this.ready)) throw new Error(this.error || 'オフラインです');
+    const snap = await this.F.get(this.ref('shops/' + rid));
+    return snap.exists() ? snap.val() : null;
+  }
   async putRank(pid, entry) {
     if (!(await this.ready)) return false;
     await this.F.set(this.ref('lb/' + pid), entry);

@@ -12,14 +12,16 @@ const V2 = new THREE.Vector2();
 const REACH = 2.5;
 
 export class Game {
-  constructor(app, { mode, room, roomId }) {
+  constructor(app, opts) {
+    const { mode, room, roomId } = opts;
     this.app = app; this.mode = mode; this.room = room; this.roomId = roomId;
     this.me = app.profile.pid;
     this.R = app.renderer; this.input = app.input; this.ui = app.gameUI;
     this.ui.bind(this);
     this.players = {};
     this.events = [];
-    if (mode !== 'client') { this.sim = new Sim(app.profile.store); this.store = this.sim.store; this.sim.players[this.me] = { x: 0, z: 0, name: app.profile.name }; this.sim.room = !!room; this.sim.custCap = app.renderer.lite ? 24 : 36; }
+    this.shared = !!(room && opts.store); this.local = !!opts.local; // ルームのお店（みんなの店）
+    if (mode !== 'client') { this.sim = new Sim(this.shared ? opts.store : app.profile.store); this.store = this.sim.store; this.sim.players[this.me] = { x: 0, z: 0, name: app.profile.name }; this.sim.room = !!room; this.sim.custCap = app.renderer.lite ? 24 : 36; }
     else { this.store = null; }
     this.dyn = null;
     const [sx, sz] = PLAYER_SPAWN;
@@ -70,6 +72,7 @@ export class Game {
         st.time = this.dyn?.time ?? this.store?.time ?? core.time ?? 480;
         const prevPhase = this.store?.phase;
         this.store = st;
+        if (this.roomId) this.app.rememberRoom(this.roomId, st); // 参加したルーム（みんなの店）を覚えておく
         if (prevPhase === 'summary' && st.phase !== 'summary') this.ui.closeSummary();
         this.ui.refresh();
       } catch (e) { console.warn('store parse', e); }
