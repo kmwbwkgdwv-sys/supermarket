@@ -1,7 +1,7 @@
 // ===== ゲームセッション（操作・同期・描画の橋渡し） =====
 import * as THREE from 'three';
 import { Sim, normalizeStore, getPrice, priceLimit } from './sim.js';
-import { FIXTURES, PRODUCTS, PLAYER_BOUNDS, PLAYER_SPAWN, BUILDING, MANAGER, STAFF_ROLES, TRASH_TYPES, DELIVERY_AREA, marketPrice, getWalls, fixtureFootprint, snapFixture, worldToLocal, pickSlot, pickBoxSlot,
+import { FIXTURES, PRODUCTS, boxProd, PLAYER_BOUNDS, PLAYER_SPAWN, BUILDING, MANAGER, STAFF_ROLES, TRASH_TYPES, DELIVERY_AREA, marketPrice, getWalls, fixtureFootprint, snapFixture, worldToLocal, pickSlot, pickBoxSlot,
   checkoutSpot, localToWorld, slotCapacity, pickTag, tagLocal } from './data.js';
 import { clamp, yen, dist, angleLerp, lerp } from './util.js';
 import { toast, h, modal, confirmBox } from './ui.js';
@@ -20,7 +20,7 @@ export class Game {
     this.ui.bind(this);
     this.players = {};
     this.events = [];
-    this.shared = !!(room && opts.store); this.local = !!opts.local; // ルームのお店（みんなの店）
+    this.shared = !!opts.store; this.local = !!opts.local; // みんなの店（ルームでも、ひとりでも）
     if (mode !== 'client') { this.sim = new Sim(this.shared ? opts.store : app.profile.store); this.store = this.sim.store; this.sim.players[this.me] = { x: 0, z: 0, name: app.profile.name }; this.sim.room = !!room; this.sim.custCap = app.renderer.lite ? 24 : 36; }
     else { this.store = null; }
     this.dyn = null;
@@ -42,7 +42,7 @@ export class Game {
     if (room) this.ui.setRoom([h('b', {}, '👥 ルーム ' + roomId), h('span', { class: 'plist2' })]);
     if (!this.app.profile.tutorialDone && mode !== 'client') setTimeout(() => { if (this.app.game === this) this.help(true); }, 600);
     // 何もない状態から：まずは発注
-    setTimeout(() => { const st = this.store; if (st && st.day === 1 && st.phase === 'prep' && !st.boxes.length && !st.fixtures.some((f) => f.s && f.s.some((x) => x[1] > 0))) toast('📋 まずは倉庫の奥のマネージャー室のボードで商品を発注しよう！', 'ok', 5000); }, 2500);
+    setTimeout(() => { const st = this.store; if (st && st.day === 1 && st.phase === 'prep' && !st.boxes.length && !st.fixtures.some((f) => f.s && f.s.some((x) => x[1] > 0))) toast('📋 まずは入口の右のパソコン室（倉庫から入る）のボードで商品を発注しよう！', 'ok', 5000); }, 2500);
   }
   _bindRoom() {
     const R = this.room;
@@ -155,6 +155,7 @@ export class Game {
     this._collisions();
     if (inp.edges.has('menu')) { if (this.state === 'build') this.toggleBuild(false); else if (this.state === 'reg') this.leaveRegister(); else this.ui.openPause(); }
     if (inp.edges.has('chat') && this.room) this.ui.openChat();
+    if (inp.edges.has('tab') && this.state !== 'build' && this.state !== 'reg' && !this.ui.open) this.ui.openRep();
     if (inp.edges.has('cam')) { this.app.settings.cam = this.app.settings.cam === 'first' ? 'third' : 'first'; this.app.applySettings(); }
     if (inp.edges.has('build')) this.toggleBuild(this.state !== 'build');
     if (this.state === 'reg') this._updateReg(dt, inp);
@@ -337,10 +338,22 @@ export class Game {
     }
     const drop = { label: '床に置く', fn: () => this.act({ t: 'drop', ...this.dropPoint() }) };
     if (held) {
-      const p = PRODUCTS[held.p];
-      A.info = `📦 <b>${p.icon} ${p.name}</b> 残り ${held.n}/${p.qty}${held.o ? '（開いている）' : '（閉じている）'}`;
+      const p = boxProd(held.p), empty = held.n <= 0;
+      A.info = empty ? `📦 <b>空の段ボール</b>${PRODUCTS[held.p] ? `（${p.icon} ${p.name}の箱）` : ''}${held.o ? '（開いている）' : '（閉じている）'}<br>棚の商品を1種類だけ詰めて運べます（模様替えに）`
+        : `📦 <b>${p.icon} ${p.name}</b> 残り ${held.n}/${p.qty}${held.o ? '（開いている）' : '（閉じている）'}`;
       A.box = { label: held.o ? '閉じる' : '開ける', fn: () => this.act({ t: 'boxOpen', open: !held.o }) };
-      if (t?.type === 'fixture' && t.si != null && t.si >= 0) {
+      if (t?.type === 'fixture' && t.si != null && t.si >= 0 && empty) {
+        // 空の段ボール：どの商品でも詰められる（詰めるとその商品の箱になる）
+        const f = t.f, sl = FIXTURES[f.t].slots[t.si], s = f.s[t.si];
+        A.slot = [f.id, sl];
+        if (s[0] && s[1] > 0) {
+          const sp = PRODUCTS[s[0]];
+          if (!held.o) { A.act = { label: '開ける', fn: () => this.act({ t: 'boxOpen', open: true }) }; A.hint = `段ボールを開けると${sp.name}を詰められます`; }
+          else { A.act = { label: '箱に詰める', repeat: true, fn: () => this.act({ t: 'unstock', fid: f.id, si: t.si }) }; A.hint = `${sp.icon} ${sp.name}を箱に詰める（1箱${sp.qty}個まで）`; }
+          A.info += `<br>棚：${sp.icon} ${s[1]}/${slotCapacity(s[0], sl)}`;
+        } else A.hint = '空の段ボール：商品が並んでいる棚から詰められます';
+        A.alt = drop;
+      } else if (t?.type === 'fixture' && t.si != null && t.si >= 0) {
         const f = t.f, sl = FIXTURES[f.t].slots[t.si], s = f.s[t.si];
         const cap = s[0] ? slotCapacity(s[0], sl) : slotCapacity(held.p, sl);
         A.slot = [f.id, sl];
@@ -369,15 +382,15 @@ export class Game {
         A.act = held.n === 0 ? { label: 'ゴミ箱に捨てる', fn: () => this.act({ t: 'discard', fid }) } : null; A.hint = held.n ? '空の段ボールだけ捨てられます' : ''; A.alt = drop;
       } else {
         A.act = drop;
-        if (held.n === 0) A.hint = '空の段ボールはゴミ箱（🗑️）かリサイクルボックス（♻️）へ';
+        if (held.n === 0) A.hint = '空の段ボール：棚の商品を詰めて運べます（いらなければゴミ箱🗑️・リサイクル♻️へ）';
       }
       return A;
     }
     if (!t) return A;
     if (t.type === 'box') {
       const b = st.boxes.find((o) => o.id === t.bid); if (!b) return A;
-      const p = PRODUCTS[b.p];
-      A.info = `📦 <b>${p.icon} ${p.name}</b> ×${b.n}${b.o ? '（開いている）' : ''}`;
+      const p = boxProd(b.p);
+      A.info = b.n > 0 ? `📦 <b>${p.icon} ${p.name}</b> ×${b.n}${b.o ? '（開いている）' : ''}` : `📦 <b>空の段ボール</b>${b.o ? '（開いている）' : ''}<br>どの商品でも1種類だけ詰められます`;
       A.act = { label: '拾う', fn: () => this.act({ t: 'pick', bid: b.id }) };
       if (b.loc.t === 'f' && b.loc.y < 0.05) A.alt = { label: b.o ? '閉じる' : '開ける', fn: () => this.act({ t: 'boxOpen', bid: b.id, open: !b.o }) };
       return A;
@@ -432,7 +445,7 @@ export class Game {
     this.input.setLabel('alt', A.alt?.label || '', !!A.alt);
     this.input.setLabel('box', A.box?.label || '', !!A.box, A.box?.icon || '📦'); this.input.setVisible('box', !!A.box);
     this.ui.setHint(A.hint, A.info);
-    const k = this.input.touchVisible ? '' : `${A.act ? 'E/左クリック：' + A.act.label + '　' : ''}${A.alt ? 'Q/右クリック：' + A.alt.label + '　' : ''}${A.box ? 'F：' + A.box.label + '　' : ''}B：建築　V：視点　Esc：メニュー${this.room ? '　Enter：チャット' : ''}`;
+    const k = this.input.touchVisible ? '' : `${A.act ? 'E/左クリック：' + A.act.label + '　' : ''}${A.alt ? 'Q/右クリック：' + A.alt.label + '　' : ''}${A.box ? 'F：' + A.box.label + '　' : ''}B：建築　V：視点　Tab：評判　Esc：メニュー${this.room ? '　Enter：チャット' : ''}`;
     this.ui.setKeys(k);
     this.ui.showCross(true);
     this.timers.repeat -= dt;
@@ -646,7 +659,7 @@ export class Game {
   help(first) {
     const m = document.createElement('div');
     const steps = [
-      ['📋', '最初は棚も倉庫も空っぽ。まずはマネージャー室のボードで商品を発注しよう'],
+      ['📋', '最初は棚も倉庫も空っぽ。まずはパソコン室（入口の右・倉庫から入る）のボードで商品を発注しよう'],
       ['🛒', '発注はカートに入れて注文。1回の配達は最大10箱まで、送料は1回1,000円'],
       ['🪂', '発注した段ボールは店の前の「荷物置き場」に空から降ってくる。倉庫の在庫棚に運ぶか、そのまま補充'],
       ['🗄️', '棚の1枠には段ボール1箱ぶんが入る。1箱ぜんぶ入れると枠がいっぱいになる'],
@@ -654,8 +667,8 @@ export class Game {
       ['🏷️', '補充するとその商品の値札がつく。品出し係は値札のついた棚にだけ補充しに行く（値札がないと働かない）'],
       ['🗑️', '空の段ボールは倉庫の大型ゴミ箱へ。ゴミ捨て係を雇うと自動で捨ててくれる'], ['🪧', '入口の看板を「OPEN」にすると営業スタート（CLOSEDのままだとお客さんは来ない）'],
       ['🧾', 'レジに入って商品をタップ→スキャン、おつりを渡す'], ['🏷️', '商品には毎日変わる相場がある。値段は棚のふちの値札を狙って「値段を変える」で変えられる（相場の+20%までなら売れる）'],
-      ['📋', '倉庫の奥のマネージャー室：ボードで発注・スキル・店舗拡張'], ['🌟', 'スキルボードの「🛒 商品」で新しい商品を解放'], ['📊', '閉店すると1日の収支が出て、次の日へ'],
- ['♻️', '空き箱は裏口のリサイクルボックスに入れるとお金になる'], ['🗺️', 'お金がたまったら区画を買い足して、売り場も倉庫も左右・奥に広げよう'], ['🔨', '建築ボタンで棚・冷蔵ケース・レジ・看板を設置。置いてある棚やレジは狙って「🔧動かす」（F）で移動できる'], ['🎥', 'Vキー／設定で一人称と三人称を切り替え'],
+      ['📋', 'パソコン室：ボードで発注・従業員・スキル・店舗拡張。💬 評判と口コミは画面上の⭐（Tab）でいつでも見られる'], ['🌟', 'スキルボードの「🛒 商品」で新しい商品を解放'], ['📊', '閉店すると1日の収支が出て、次の日へ'],
+ ['♻️', '空き箱は建物の右の外（搬入口から出てすぐ）のリサイクルボックスに入れるとお金になる'], ['📦', '空の段ボールには、どの商品でも1種類だけ詰められる。棚の商品を詰めて別の棚へ運べば模様替えが楽（空き箱は発注の「📦 空き箱」でも買える）'], ['🗺️', 'お金がたまったら区画を買い足して、売り場は左と奥へ、倉庫は奥へ広げよう'], ['🔨', '建築ボタンで棚・冷蔵ケース・レジ・看板を設置。置いてある棚やレジは狙って「🔧動かす」（F）で移動できる'], ['🎥', 'Vキー／設定で一人称と三人称を切り替え'],
     ];
     m.append(...steps.map(([i, t]) => h('div', { class: 'help-row' }, h('span', { class: 'hi' }, i), h('span', {}, t))));
     const md = modal('❓ 遊び方', [m, h('button', { class: 'btn big', onclick: () => md.close() }, 'わかった！')], { onClose: () => { this.ui.closed(); if (first) { this.app.profile.tutorialDone = true; this.app.saveLocal(); } } });

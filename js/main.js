@@ -6,6 +6,7 @@ import { Input } from './input.js';
 import { Music, Sfx } from './audio.js';
 import { Cloud, FirebaseRoom, LocalRoom } from './net.js';
 import { loadSettings, saveSettings, loadProfile, createProfile, saveProfileLocal, syncUp, syncDown, restoreByCode, rankEntry, evictOldShop } from './save.js';
+const LOCK_MS = 90000; // ひとりで遊んでいる人がいる目印の有効時間
 import { showWelcome, showMenu, showCode, showEditor, openSettings, hideScreen, toast, choiceBox, h, $ } from './ui.js';
 import { GameUI } from './gameui.js';
 import { Game } from './game.js';
@@ -129,12 +130,30 @@ class App {
   }
 
   // ---------- ゲーム開始・終了 ----------
-  startSolo() {
+  // ひとりで経営。roomId を渡すと「みんなの店」をひとりで遊ぶ（進めた分はみんなの店に保存）
+  async startSolo(opts = {}) {
+    let store = null;
+    if (opts.roomId) {
+      const id = opts.roomId;
+      if (this.cloud.configured && (await this.cloud.ready)) {
+        // いまルームで遊んでいる人がいたら、ひとりでは開けない（データがぶつからないように）
+        try {
+          const meta = (await this.cloud.F.get(this.cloud.ref('rooms/' + id + '/meta'))).val();
+          if (meta?.host && Date.now() - (meta.hb || 0) < 20000) throw new Error('いまルーム「' + id + '」でみんなが遊んでいます。「みんなで経営」から参加してね');
+        } catch (e) { if (e.message.startsWith('いまルーム')) throw e; }
+      }
+      const got = await this.loadShopRec(id, false);
+      if (!got) throw new Error('このルームのお店のデータが見つかりません');
+      const { rec } = got;
+      if (rec.solo && Date.now() - rec.solo < LOCK_MS && rec.pid && rec.pid !== this.profile.pid) throw new Error(`${rec.by || 'だれか'}さんがこのお店をひとりで遊んでいます。終わるまで待ってね`);
+      store = got.store; normalizeStore(store);
+    }
     hideScreen();
-    this.game = new Game(this, { mode: 'solo' });
+    this.game = new Game(this, { mode: 'solo', store, roomId: opts.roomId || null });
     this.mode = 'game';
     this.renderer.resize();
     this.input.layout();
+    if (store) { this.rememberRoom(opts.roomId, store, true); this.saveShop(true); toast(`🏪 みんなの店「${store.name}」をひとりで遊びます（進めた分はみんなの店に保存）`, 'ok', 3500); }
   }
   async startRoom(id, local) {
     const me = this.profile.pid;
@@ -144,7 +163,9 @@ class App {
     let store = null, cont = null;
     if (role === 'host') {
       // みんなの店：このルームIDで前に遊んだお店があれば、その続きから（誰がホストでも同じお店）
-      const saved = await this.loadShop(id, local);
+      const got = await this.loadShopRec(id, local);
+      if (got?.rec?.solo && Date.now() - got.rec.solo < LOCK_MS && got.rec.pid && got.rec.pid !== me) { room.leave(); throw new Error(`${got.rec.by || 'だれか'}さんがこのお店をひとりで遊んでいます。終わるまで待ってね`); }
+      const saved = got?.store;
       if (saved) { store = saved; cont = saved; }
       else {
         const own = this.profile.store;
@@ -163,24 +184,26 @@ class App {
     this.game = new Game(this, { mode: role, room, roomId: id, store, local });
     this.mode = 'game';
     this.renderer.resize();
-    if (role === 'host' && store) { this.rememberRoom(id, store); this.saveShop(true); }
+    if (role === 'host' && store) { this.rememberRoom(id, store, true); this.saveShop(true); }
     toast(role === 'host' ? (cont ? `🏪 みんなの店「${store.name}」の続きから（Lv.${store.level}・${store.day}日目）！友だちに同じIDを教えよう` : `🏪 ルーム「${id}」を作りました！友だちに同じIDを教えよう`) : `👥 ルーム「${id}」に参加しました`, 'ok', 4000);
   }
   // ---------- みんなの店（ルームIDごとのお店） ----------
   shopKey(id) { return 'martmates.shop.' + id; }
-  async loadShop(id, local) {
+  async loadShop(id, local) { return (await this.loadShopRec(id, local))?.store || null; }
+  async loadShopRec(id, local) {
     let best = null;
     try { const l = JSON.parse(localStorage.getItem(this.shopKey(id)) || 'null'); if (l?.d) best = l; } catch (e) { /* noop */ }
     if (!local && this.cloud.configured) {
       try { const c = await this.cloud.loadShop(id); if (c?.d && (!best || (c.t || 0) >= (best.t || 0))) best = c; } catch (e) { console.warn('みんなの店を読み込めません', e); }
     }
     if (!best) return null;
-    try { return JSON.parse(best.d); } catch (e) { return null; }
+    try { return { rec: best, store: JSON.parse(best.d) }; } catch (e) { return null; }
   }
-  saveShop(cloud, g = this.game) {
+  saveShop(cloud, g = this.game, ending = false) {
     if (!g?.shared || !g.sim) return;
     const st = g.sim.store, id = g.roomId;
-    const data = { d: JSON.stringify(st), t: Date.now(), n: String(st.name || '').slice(0, 16), lv: st.level, day: st.day, by: this.profile.name };
+    // solo：ひとりで遊んでいる間はその時刻を入れておく（ほかの人が同時に開かないように）
+    const data = { d: JSON.stringify(st), t: Date.now(), n: String(st.name || '').slice(0, 16), lv: st.level, day: st.day, by: this.profile.name, pid: this.profile.pid, solo: g.mode === 'solo' && !ending ? Date.now() : 0 };
     // 端末の中にも控えを置く（いっぱいなら古いルームの控えから消す）
     const json = JSON.stringify(data);
     for (let tries = 0; tries < 10; tries++) {
@@ -194,18 +217,18 @@ class App {
     }
   }
   // 前に遊んだルームを覚えておく（ルーム画面に出す）
-  rememberRoom(id, st) {
+  rememberRoom(id, st, host) {
     if (!this.profile || !st) return;
-    const e = { id, n: String(st.name || '').slice(0, 16), lv: st.level, day: st.day, t: Date.now() };
-    const list = (this.profile.rooms || []).filter((r) => r.id !== id);
     const prev = (this.profile.rooms || []).find((r) => r.id === id);
+    const e = { id, n: String(st.name || '').slice(0, 16), lv: st.level, day: st.day, t: Date.now(), h: !!(host || prev?.h) }; // h：ホストしたことがある（ひとりでも遊べる）
+    const list = (this.profile.rooms || []).filter((r) => r.id !== id);
     this.profile.rooms = [e, ...list].slice(0, 8);
-    if (!prev || prev.lv !== e.lv || prev.day !== e.day || prev.n !== e.n) this.saveLocal();
+    if (!prev || prev.lv !== e.lv || prev.day !== e.day || prev.n !== e.n || prev.h !== e.h) this.saveLocal();
   }
   endGame(fromClose) {
     if (!this.game) return;
     const g = this.game; this.game = null;
-    if (g.shared) this.saveShop(true, g); // みんなの店を保存
+    if (g.shared) this.saveShop(true, g, true); // みんなの店を保存
     else if (g.sim) this.profile.store = g.sim.store;
     g.stop();
     this.saveGame(true);

@@ -1,7 +1,7 @@
 // ===== ゲーム中のUI（HUD・発注PC・スキルボード・レジ・建築・チャット） =====
 import { h, $, modal, toast, confirmBox, promptBox } from './ui.js';
 import { PRODUCTS, PRODUCTS_LIST, CATEGORIES, FIXTURES, FIXTURE_CATS, SKILLS, SKILLS_LIST, STAFF_ROLES, STAFF_NAMES,
-  productUnlocked, fixtureUnlocked, staffLimit, STAFF_SLOTS, STAFF_MAX, slotWage, xpNeed, closeTime, CHAT_PRESETS, SALES, STOCK_COLS, STOCK_ROWS, stockAt, expandTargets, marketPrice, marketCost, SKILL_BRANCHES, ROOT_POS, ORDER_MAX_BOXES, SHIPPING_FEE, MAX_LEVEL, halfQty } from './data.js';
+  productUnlocked, fixtureUnlocked, staffLimit, STAFF_SLOTS, STAFF_MAX, slotWage, xpNeed, closeTime, CHAT_PRESETS, SALES, STOCK_COLS, STOCK_ROWS, stockAt, expandTargets, marketPrice, marketCost, SKILL_BRANCHES, ROOT_POS, ORDER_MAX_BOXES, SHIPPING_FEE, MAX_LEVEL, halfQty, EMPTY_BOX, EMPTY_BOX_PRICE, boxProd } from './data.js';
 import { getPrice, orderCost, orderTotal, priceLimit, customerFactors, repStars } from './sim.js';
 import { yen, fmtTime, mulberry32, escapeText } from './util.js';
 
@@ -15,7 +15,7 @@ export class GameUI {
     this.day = h('div', { class: 'hud-chip' }); this.openBtn = h('button', { class: 'hud-open' });
     this.money = h('div', { class: 'hud-chip money' });
     this.lvText = h('span'); this.lvBar = h('i'); this.sp = h('span', { class: 'sp' });
-    this.rep = h('div', { class: 'hud-chip' });
+    this.rep = h('button', { class: 'hud-chip rep', title: '評判と口コミを見る（Tab）' });
     this.lv = h('button', { class: 'hud-chip lv' }, this.lvText, h('div', { class: 'bar' }, this.lvBar), this.sp);
     H.append(h('div', { class: 'hud-top' }, this.day, this.openBtn, this.money, this.lv, this.rep));
     this.roomInfo = h('div', { class: 'room-info hidden' }); H.append(this.roomInfo);
@@ -33,9 +33,9 @@ export class GameUI {
   bind(game) {
     this.g = game;
     this.openBtn.onclick = () => { const ph = game.store.phase; toast(ph === 'prep' ? '🪧 入口の看板をOPENにすると営業スタート！' : ph === 'open' ? '🪧 店じまいするときは入口の看板をCLOSEDに' : '⏳ 残りのお客さんの会計をしよう'); };
-    // スキル・評判などはマネージャー室のボードから（ここでは場所を教えるだけ）
-    this.lv.onclick = () => toast('🌟 スキルはマネージャー室の「フランチャイズボード」で解放できます', 'info');
-    this.rep.onclick = () => toast('💬 評判と口コミはマネージャー室の「マネージャーボード」で見られます', 'info');
+    // スキルはパソコン室のボードから（ここでは場所を教えるだけ）。評判と口コミはどこにいても見られる
+    this.lv.onclick = () => toast('🌟 スキルはパソコン室の「フランチャイズボード」で解放できます', 'info');
+    this.rep.onclick = () => { if (!this.open) this.openRep(); };
   }
   updateHUD(dt, store, dyn, force) {
     this._hudT -= dt;
@@ -90,6 +90,7 @@ export class GameUI {
       if (tab === 'order') {
         const ctabs = h('div', { class: 'tabs scroll small' });
         for (const [k, c] of Object.entries(CATEGORIES)) ctabs.append(h('button', { class: 'tab' + (k === cat ? ' on' : ''), onclick: () => { cat = k; draw(); } }, c.icon + ' ' + c.name));
+        ctabs.append(h('button', { class: 'tab' + (cat === EMPTY_BOX.id ? ' on' : ''), onclick: () => { cat = EMPTY_BOX.id; draw(); } }, '📦 空き箱'));
         const grid = h('div', { class: 'pgrid' });
         const inCart = [...cart.values()].reduce((t, n) => t + n, 0), full = inCart >= ORDER_MAX_BOXES;
         const qtyRow = (key, label, price) => {
@@ -99,6 +100,16 @@ export class GameUI {
             h('button', { class: full ? 'dim' : '', onclick: () => { if (full) { toast(`カートは最大${ORDER_MAX_BOXES}箱までです`, 'warn'); return; } cart.set(key, n + 1); draw(); } }, '＋'));
         };
         const sm = stockMap(st);
+        if (cat === EMPTY_BOX.id) {
+          // 空の段ボール：棚の商品を詰めて運ぶ（模様替え・棚の入れ替え用）
+          const have = st.boxes.filter((b) => b.n <= 0).length;
+          grid.append(h('div', { class: 'pcard2 emptybox' },
+            h('div', { class: 'pe' }, '📦'),
+            h('div', { class: 'pn' }, EMPTY_BOX.name),
+            h('div', { class: 'pm' }, 'どの商品でも1種類だけ詰められる箱。棚の商品を詰めて別の棚へ運べば模様替えが楽に'),
+            h('div', { class: 'pm' }, `補充で空になった箱も同じように使えます（いま空き箱 ${have}個）`),
+            h('div', { class: 'qtys' }, qtyRow(EMPTY_BOX.id, '1箱', EMPTY_BOX_PRICE))));
+        }
         for (const p of PRODUCTS_LIST.filter((x) => x.cat === cat)) {
           const ok = productUnlocked(p.id, st.skills);
           const unitCost = marketCost(st, p.id) * (st.skills.mk_bulk ? 0.9 : 1);
@@ -122,7 +133,7 @@ export class GameUI {
         orderBtn.textContent = items.length ? `🚚 注文する（${inCart}箱）` : '注文する';
         orderBtn.onclick = () => { g.act({ t: 'order', items }); cart.clear(); draw(); };
         // カートの中身（タップで1箱へらす）
-        const chips = h('div', { class: 'cart-chips' }, items.length ? items.map(([pid, k, half]) => h('button', { class: 'cchip', onclick: () => { const key = pid + (half ? '|h' : ''); cart.set(key, k - 1); draw(); } }, `${PRODUCTS[pid].icon}${half ? '½' : ''}×${k}`)) : h('span', { class: 'muted small' }, '＋でカートに入れてね'));
+        const chips = h('div', { class: 'cart-chips' }, items.length ? items.map(([pid, k, half]) => h('button', { class: 'cchip', onclick: () => { const key = pid + (half ? '|h' : ''); cart.set(key, k - 1); draw(); } }, `${boxProd(pid).icon}${pid === EMPTY_BOX.id ? '空' : ''}${half ? '½' : ''}×${k}`)) : h('span', { class: 'muted small' }, '＋でカートに入れてね'));
         body.append(ctabs, grid, h('div', { class: 'cartbar' },
           h('div', { class: 'cart-l' },
             h('div', { class: 'cart-h' }, h('b', { class: 'cart-n' + (full ? ' full' : '') }, `🛒 ${inCart}/${ORDER_MAX_BOXES}箱`), items.length ? h('button', { class: 'cclear', onclick: () => { cart.clear(); draw(); } }, 'からにする') : null),
@@ -190,6 +201,14 @@ export class GameUI {
     this._redraw = draw;
   }
   refresh() { this._redraw && this.open && this._redraw(); }
+  // ---------- 評判と口コミ（どこにいても見られる） ----------
+  openRep() {
+    const g = this.g, body = h('div', { class: 'pc-body tab-rep' });
+    const draw = () => { const keep = body.querySelector('.rv-list')?.scrollTop || 0; body.innerHTML = ''; body.append(repPanel(g.store)); const l = body.querySelector('.rv-list'); if (l) l.scrollTop = keep; };
+    const m = modal('💬 評判と口コミ', [body], { wide: true, cls: 'pcm rep', onClose: () => this.closed() });
+    this.opened(m); draw();
+    this._redraw = draw;
+  }
 
   openPrice(pid) {
     const g = this.g, p = PRODUCTS[pid];
@@ -239,22 +258,19 @@ export class GameUI {
         return btn;
       };
       const grid = h('div', { class: 'xgrid' });
-      grid.append(h('div', { class: 'xrow office' }, h('div', { class: 'xcell office' }, h('b', {}, 'マネージャー室'), h('span', {}, 'ボード類'))));
-      // 倉庫：上が奥。左右にも奥にも広げられる
-      for (let r = STOCK_ROWS - 1; r >= 0; r--) {
-        const stockRow = h('div', { class: 'xrow' });
-        stockRow.style.gridTemplateColumns = `repeat(${STOCK_COLS}, 1fr)`;
-        for (let c = 0; c < STOCK_COLS; c++) { const s = stockAt(c, r); stockRow.append(cell(s.id, s.name, 'stock')); }
-        grid.append(stockRow);
-      }
-      // 売り場：上が奥（倉庫側）、下が入口側。左右にも奥にも広げられる
+      // 上が奥・下が入口側。左8列が売り場、右の列が倉庫（奥へ広げられる）とパソコン室
+      const cols = `repeat(${SALES.cols}, 1fr) 1.7fr`;
       for (let r = SALES.rows - 1; r >= 0; r--) {
-        const row = h('div', { class: 'xrow' }); row.style.gridTemplateColumns = `repeat(${SALES.cols}, 1fr)`;
+        const row = h('div', { class: 'xrow' }); row.style.gridTemplateColumns = cols;
         for (let c = 0; c < SALES.cols; c++) row.append(cell('b' + c + r, `売り場 ${String.fromCharCode(65 + c)}${SALES.rows - r}`, 'bay'));
+        const s = stockAt(0, r);
+        row.append(s ? cell(s.id, s.name, 'stock') : h('div', { class: 'xcell office' }, h('b', {}, '💻 パソコン室'), h('span', {}, 'ボード類')));
         grid.append(row);
       }
-      grid.append(h('div', { class: 'xstreet' }, '🚶 歩道・入口 🚪'));
-      body.append(h('p', { class: 'muted small' }, `所持金 ${'¥' + st.money.toLocaleString()}　／　売り場も倉庫も、左右にも奥にも、いま使っている区画のとなりから1区画ずつ広げられます（買うたびに値上がり）`), grid);
+      const street = h('div', { class: 'xrow street' }); street.style.gridTemplateColumns = cols;
+      street.append(h('div', { class: 'xstreet', style: { gridColumn: `1 / ${SALES.cols}` } }, '🚶 歩道'), h('div', { class: 'xstreet door' }, '🚪 入口'), h('div', { class: 'xstreet' }, '🚚 右に搬入口'));
+      grid.append(street);
+      body.append(h('p', { class: 'muted small' }, `所持金 ${'¥' + st.money.toLocaleString()}　／　売り場は左と奥へ、倉庫は奥へ、いま使っている区画のとなりから1区画ずつ広げられます（買うたびに値上がり）`), grid);
     };
     const m = modal('🗺️ 店舗拡張ボード', body, { wide: true, onClose: () => this.closed() });
     this.opened(m); draw();
@@ -336,7 +352,8 @@ export class GameUI {
     const m = modal('⏸ メニュー', [
       h('div', { class: 'col' },
         h('button', { class: 'btn big', onclick: () => m.close() }, '▶ 再開'),
-        h('div', { class: 'muted small', style: { textAlign: 'center' } }, '📋 発注・従業員・評判・🌟 スキル・🗺️ 店舗拡張は、マネージャー室（倉庫のいちばん奥）のボードの前でできます'),
+        h('button', { class: 'btn ghost', onclick: () => { m.close(); this.openRep(); } }, '💬 評判と口コミ'),
+        h('div', { class: 'muted small', style: { textAlign: 'center' } }, '📋 発注・従業員・🌟 スキル・🗺️ 店舗拡張は、パソコン室（入口の右）のボードの前でできます。💬 評判と口コミは画面上の⭐やTabキーでいつでも見られます'),
         h('button', { class: 'btn ghost', onclick: () => { m.close(); g.app.openSettingsInGame(); } }, '⚙️ 設定'),
         h('button', { class: 'btn ghost', onclick: () => { m.close(); g.help(); } }, '❓ 遊び方'),
         g.roomId ? h('div', { class: 'chip' }, `ルームID：${g.roomId}`) : null,

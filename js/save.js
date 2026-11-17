@@ -56,6 +56,7 @@ export function fixProfile(p) {
   p.av = sanitizeAvatar(p.av);
   p.store = normalizeStore(p.store || newStore(p.name + 'マート'));
   p.playTime ||= 0; p.pid ||= randomCode(10);
+  p.slots ||= []; p.cur ||= randomCode(6); // 自分のお店（何個も持てる）：いま遊ぶお店は p.store、ほかは p.slots に入れておく
   return p;
 }
 // 端末の容量がいっぱいのとき、いちばん古い「みんなの店」の控えを1つ消す（keep は消さない）。消せたら true
@@ -117,6 +118,37 @@ export async function restoreByCode(cloud, code) {
   p.synced = Date.now();
   saveProfileLocal(p);
   return p;
+}
+// ---------- 自分のお店を何個も持つ ----------
+export const MAX_OWN_STORES = 10;
+const slotInfo = (sid, st) => ({ sid, n: String(st.name || '').slice(0, 16), lv: st.level, day: st.day, sales: Math.round(st.totalSales || 0), t: Date.now() });
+// 自分のお店の一覧（いまのお店が先頭）
+export function listOwnStores(p) {
+  return [{ ...slotInfo(p.cur, p.store), cur: true }, ...(p.slots || []).map((s) => ({ sid: s.sid, n: s.n, lv: s.lv, day: s.day, sales: s.sales, t: s.t }))];
+}
+function stashCurrent(p) { p.slots = [{ ...slotInfo(p.cur, p.store), d: JSON.stringify(p.store) }, ...(p.slots || []).filter((s) => s.sid !== p.cur)]; }
+// ほかのお店に切りかえる
+export function switchStore(p, sid) {
+  if (sid === p.cur) return true;
+  const s = (p.slots || []).find((o) => o.sid === sid);
+  if (!s) return false;
+  let st; try { st = normalizeStore(JSON.parse(s.d)); } catch (e) { return false; }
+  stashCurrent(p);
+  p.slots = p.slots.filter((o) => o.sid !== sid);
+  p.store = st; p.cur = sid;
+  return true;
+}
+// 新しいお店をつくる（いままでのお店はとっておく）
+export function newOwnStore(p, name) {
+  if (listOwnStores(p).length >= MAX_OWN_STORES) return false;
+  stashCurrent(p);
+  p.store = newStore(String(name || p.name + 'マート').slice(0, 16)); p.cur = randomCode(6);
+  return true;
+}
+export function deleteStore(p, sid) {
+  if (sid === p.cur) return false;
+  p.slots = (p.slots || []).filter((o) => o.sid !== sid);
+  return true;
 }
 export function rankEntry(p) {
   return { n: p.name, lv: p.store.level, s: Math.round(p.store.totalSales), p: Math.round(p.playTime), d: p.store.day, h: p.av.hat, st: (p.store.name || '').slice(0, 16), t: Date.now() };

@@ -113,6 +113,7 @@ h2 { margin: 0 0 6px; font-size: 21px; font-weight: 900; } h3 { margin: 14px 0 4
 .hud-chip { background: rgba(255,255,255,.92); border-radius: 13px; padding: 6px 10px; font-weight: 800; font-size: 14px; box-shadow: 0 3px 0 rgba(0,0,0,.08); pointer-events: auto; border: 0; color: var(--ink); white-space: nowrap; }
 .hud-chip b { color: #c4562a; font-size: 16px; } .hud-chip small { color: var(--muted); font-size: 11px; }
 .hud-chip.money { color: #0f7a5a; }
+.hud-chip.rep, .hud-chip.lv { cursor: pointer; }
 .hud-chip.lv { display: flex; align-items: center; gap: 6px; } .hud-chip .bar { width: 60px; height: 8px; border-radius: 6px; background: #eee2d8; overflow: hidden; } .hud-chip .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--pri), var(--gold)); }
 .hud-chip .sp.glow { color: #fff; background: var(--pri); padding: 1px 7px; border-radius: 8px; animation: pulse 1.2s infinite; }
 .hud-chip.deliv { position: absolute; top: calc(50px + var(--safe-t)); left: calc(8px + var(--safe-l)); }
@@ -251,12 +252,12 @@ input[type=range] { accent-color: var(--pri); }
 /* 店舗拡張ボード */
 .xgrid { display: flex; flex-direction: column; gap: 6px; background: #f6efe6; padding: 10px; border-radius: 14px; }
 .xrow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-.xrow:nth-child(2) { grid-template-columns: repeat(3, 1fr); }
 .xrow.office { grid-template-columns: 1fr; width: 34%; margin: 0 auto; }
 .xcell { border: 0; border-radius: 10px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; font-weight: 800; color: var(--ink); background: #e3ddd6; min-height: 48px; justify-content: center; }
 .xcell b { font-size: 12px; } .xcell.owned { background: #c9f2df; } .xcell.can { background: #ffe0c9; outline: 3px solid var(--pri); cursor: pointer; animation: glow 1.6s infinite; } .xcell.locked { opacity: 0.6; }
 .xcell.stock.owned { background: #d6e6f5; } .xcell.office { background: #efe2f7; }
 .xstreet { text-align: center; font-weight: 800; color: #7b6d63; background: #d9d4cc; border-radius: 8px; padding: 4px; font-size: 12px; }
+.xstreet.door { background: #ffe8a8; color: #8a5a00; } .xrow.street .xstreet { font-size: 10px; padding: 3px 2px; white-space: nowrap; overflow: hidden; }
 .trend { font-weight: 900; font-size: 11px; margin-left: 2px; } .trend.up { color: #d0315a; } .trend.down { color: #0f9a6e; } .trend.flat { color: #999; }
 .tab .tcount { font-size: 11px; opacity: .75; } .tab .tbadge { display: inline-block; min-width: 16px; margin-left: 4px; border-radius: 9px; background: #ff4d6d; color: #fff; font-size: 11px; padding: 0 4px; }
 .snode.prod .si.prods { font-size: 17px; letter-spacing: -2px; } .snode.prod { background: #f6fff4; } .snode.prod.owned { background: linear-gradient(#c9f7c0, #8ee08a); box-shadow: 0 4px 0 #4fae58; }
@@ -418,3 +419,12 @@ body.has-modal .toast { padding: 6px 12px; font-size: 12px; opacity: .95; }
 .name-row { align-items: center; gap: 6px; flex-wrap: wrap; }
 .name-inp { width: 9em; padding: 6px 10px; font-size: 16px; }
 .btn.tiny { padding: 2px 8px; font-size: 13px; min-height: 0; margin-left: 6px; }
+/* お店をえらぶ */
+.card.stores { max-height: calc(100vh - 24px); overflow-y: auto; }
+.store-list { display: flex; flex-direction: column; gap: 6px; }
+.store-row { display: flex; align-items: center; gap: 8px; background: #fffaf6; border: 2px solid #f4efea; border-radius: 12px; padding: 6px 10px; }
+.store-row.cur { border-color: var(--pri); }
+.store-row.room { background: #f3f8ff; border-color: #dce9fb; }
+.store-row .sr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.store-row .sr-main b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.store-row .sr-main small { color: var(--muted); font-weight: 700; }

@@ -278,7 +278,7 @@ const MAKERS = {
     for (let x = -h; x < w + h; x += 48) { g.fillStyle = '#f2c230'; g.beginPath(); g.moveTo(x, h - 60); g.lineTo(x + 24, h - 60); g.lineTo(x - 6, h); g.lineTo(x - 30, h); g.fill(); }
     g.fillStyle = '#222'; g.fillRect(0, h - 64, w, 4);
     g.fillStyle = '#3a3f45'; g.font = `900 64px ${FONT}`; g.textAlign = 'center'; g.fillText('拡張予定地', w / 2, h * 0.42);
-    g.fillStyle = '#6b6f75'; g.font = `800 28px ${FONT}`; g.fillText('マネージャー室の拡張ボードで購入', w / 2, h * 0.55);
+    g.fillStyle = '#6b6f75'; g.font = `800 28px ${FONT}`; g.fillText('パソコン室の拡張ボードで購入', w / 2, h * 0.55);
   }),
   cheese: () => canvasTex(128, 128, (g, w, h) => {
     g.fillStyle = '#ffd34d'; g.fillRect(0, 0, w, h);
@@ -496,6 +496,16 @@ function drawBoxSide(g, w, h, p) {
   g.fillStyle = '#c4945c'; g.fillRect(0, 0, w, h);
   clouds(g, w, h, p.id.length * 7, { alpha: 0.25 }); noise(g, w, h, 14, p.id.length);
   g.fillStyle = 'rgba(110,70,30,0.18)'; for (let x = 0; x < w; x += 7) g.fillRect(x, 0, 2, h);
+  if (p.id === '_box') {
+    // 無地の空き箱：お店のスタンプだけ
+    g.globalAlpha = 0.55; g.strokeStyle = '#6b4320'; g.fillStyle = '#6b4320'; g.lineWidth = 5;
+    g.beginPath(); g.arc(w / 2, h * 0.45, h * 0.24, 0, Math.PI * 2); g.stroke();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `900 40px ${SANS}`; g.fillText('MART', w / 2, h * 0.4); g.font = `900 30px ${SANS}`; g.fillText('MATES', w / 2, h * 0.51);
+    g.font = `700 20px ${SANS}`; g.fillText('↑↑ 天地無用 ↑↑', w / 2, h * 0.9);
+    g.globalAlpha = 1;
+    return;
+  }
   const ink = shade(p.color, -0.28);
   g.strokeStyle = ink; g.lineWidth = 6; rr(g, w * 0.08, h * 0.12, w * 0.84, h * 0.7, 18); g.stroke();
   g.globalAlpha = 0.9;
@@ -610,7 +620,7 @@ const bubbleCache = new Map();
 export function bubbleTexture(kind, text) {
   const key = kind + (text || '');
   if (bubbleCache.has(key)) return bubbleCache.get(key);
-  const ICON = { none: '❓', empty: '😞', pricey: '💸', cheap: '🤩', angry: '💢', wait: '⌛', happy: '😊', ok: '🙂', chat: '', notag: '🏷️', nobox: '📦', trash: '🗑️' };
+  const ICON = { none: '❓', empty: '😞', pricey: '💸', cheap: '🤩', angry: '💢', wait: '⌛', happy: '😊', ok: '🙂', chat: '', notag: '🏷️', nobox: '📦', trash: '🗑️', rackfull: '🗄️' };
   const isChat = kind === 'chat';
   const W = isChat ? 512 : 128, H = 128;
   const t = canvasTex(W, H, (g, w, h) => {

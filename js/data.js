@@ -2,41 +2,37 @@
 export const CELL = 0.5;
 // ---------- 店舗レイアウト（原作風：5m区画を少しずつ買い足して広げる） ----------
 export const BAY = 5;
-export const SALES = { x0: -25, z0: 6, cols: 10, rows: 4 }; // 売り場区画 b{列}{行}  行0=通り側（幅50m×奥行20m・最大40区画）
-export const BACK_Z = -14;    // 売り場と倉庫の境目（売り場は奥へ4列まで広がる）
-export const STOCK_MID_Z = -18; // 倉庫の手前の列と奥の列の境目
-export const STOCK_Z = -22;   // 倉庫の奥の壁（倉庫は手前4m＋奥4mの2列・最大で奥行き8m）
-export const OLD_STOCK_Z = -22; // v8 までの倉庫の奥の壁（セーブ移行用）
-export const V12_STOCK_Z = -30; // v9〜v12（倉庫が奥行き16mだったころ）の奥の壁（セーブ移行用）
-// 倉庫の区画：横5列×縦2列（r=0 手前＝売り場側に出入口あり／r=1 奥）。c は左から 0〜4
+export const SALES = { x0: -35, z0: 6, cols: 8, rows: 4 }; // 売り場区画 b{列}{行}  列0=左はし・列7=右はし（入口のある所）、行0=通り側（最大 40m×20m・32区画）
+export const SALES_X1 = SALES.x0 + SALES.cols * BAY; // 売り場の右はし（ここから右は倉庫・パソコン室）= 5
+export const BACK_Z = SALES.z0 - SALES.rows * BAY;   // 建物の奥の壁 = -14
+// 右側の列：手前にパソコン室（マネージャー室）、その奥に倉庫（奥へ広げられる）
+export const STRIP = { x0: SALES_X1, x1: SALES_X1 + 10 };
+export const MANAGER = { x0: STRIP.x0, x1: STRIP.x1, z0: 1, z1: 6, door: [7, 8.6] }; // door：奥の壁(z0)の出入口のx
+// 倉庫の区画（右の列を手前から奥へ）。door：売り場との壁(x=STRIP.x0)の出入口のz
 export const STOCK_SECTIONS = [
-  { id: 'st4', name: '倉庫A', c: 0, r: 0, x0: -25, x1: -15, door: [-23, -21] },
-  { id: 'st2', name: '倉庫B', c: 1, r: 0, x0: -15, x1: -5, door: [-13, -11] },
-  { id: 'st0', name: '倉庫C', c: 2, r: 0, x0: -5, x1: 5, door: [2, 4] },
-  { id: 'st1', name: '倉庫D', c: 3, r: 0, x0: 5, x1: 15, door: [11, 13] },
-  { id: 'st3', name: '倉庫E', c: 4, r: 0, x0: 15, x1: 25, door: [21, 23] },
-  { id: 'sb4', name: '倉庫A奥', c: 0, r: 1, x0: -25, x1: -15 },
-  { id: 'sb2', name: '倉庫B奥', c: 1, r: 1, x0: -15, x1: -5 },
-  { id: 'sb0', name: '倉庫C奥', c: 2, r: 1, x0: -5, x1: 5 },
-  { id: 'sb1', name: '倉庫D奥', c: 3, r: 1, x0: 5, x1: 15 },
-  { id: 'sb3', name: '倉庫E奥', c: 4, r: 1, x0: 15, x1: 25 },
+  { id: 'sr1', name: '倉庫1', r: 1, x0: STRIP.x0, x1: STRIP.x1, z0: -4, z1: 1, door: [-2.6, -0.6] },
+  { id: 'sr2', name: '倉庫2', r: 2, x0: STRIP.x0, x1: STRIP.x1, z0: -9, z1: -4, door: [-7.6, -5.6] },
+  { id: 'sr3', name: '倉庫3', r: 3, x0: STRIP.x0, x1: STRIP.x1, z0: -14, z1: -9, door: [-12.6, -10.6] },
 ];
-for (const s of STOCK_SECTIONS) { s.z1 = s.r === 0 ? BACK_Z : STOCK_MID_Z; s.z0 = s.r === 0 ? STOCK_MID_Z : STOCK_Z; }
-export const STOCK_COLS = 5, STOCK_ROWS = 2;
-export const stockAt = (c, r) => STOCK_SECTIONS.find((s) => s.c === c && s.r === r);
-export const STOCK_ORDER = ['st4', 'st2', 'st0', 'st1', 'st3']; // 手前の列・左から順
-export const MANAGER = { x0: -5, x1: 0, z0: -27.5, z1: -22, door: [-3.6, -2.1] };
-export const DOCK = { x0: 0.6, x1: 4.6, z: -22 };
+export const STOCK_COLS = 1, STOCK_ROWS = STOCK_SECTIONS.length;
+export const stockAt = (c, r) => (c === 0 ? STOCK_SECTIONS.find((s) => s.r === r) : null);
+export const DOCK = { x: STRIP.x1, z0: -3.6, z1: -0.4 }; // 右の壁の搬入口（倉庫1）
 export const DOOR = { x: 0, z: 6, half: 1.2 };
-export const BUILDING = { minX: -25, maxX: 25, minZ: -22, maxZ: 6 };
-// 最初から使える売り場：手前の 20m×10m（8区画）＋倉庫へつながる真ん中の奥 10m×10m（4区画）。
-// そこから左右にも奥にも1区画ずつ広げられる
-export const START_BAYS = ['b30', 'b31', 'b40', 'b41', 'b50', 'b51', 'b60', 'b61', 'b42', 'b43', 'b52', 'b53'];
-export const OLD_BACK_Z = -4; // v7 までの売り場の奥（セーブ移行用）
-export const START_STOCK = ['st0', 'sb0']; // 真ん中の倉庫（手前＋奥）。奥の壁にマネージャー室と搬入口
-export const NAV_BOUNDS = { minX: -32, maxX: 32, minZ: -29, maxZ: 14 };
-export const PLAYER_BOUNDS = { minX: -33, maxX: 33, minZ: -34, maxZ: 17 };
-export const SPAWN_POINTS = [[-27.5, 8.2], [27.5, 8.2], [-27.5, 7.4], [27.5, 7.4]];
+export const BUILDING = { minX: SALES.x0, maxX: STRIP.x1, minZ: BACK_Z, maxZ: 6 };
+export const STAFF_HOME = [10, -1.5]; // 従業員が出勤してくる所（倉庫1）
+// 最初から使える売り場：入口のまわりの 15m×10m（6区画）。左と奥へ1区画ずつ広げられる
+export const START_BAYS = ['b50', 'b51', 'b60', 'b61', 'b70', 'b71'];
+export const START_STOCK = ['sr1'];
+// ---- セーブ移行用（昔のレイアウトの数字）----
+export const OLD_BACK_Z = -4; // v7 までの売り場の奥
+export const OLD_STOCK_Z = -22; // v8 までの倉庫の奥の壁
+export const V12_STOCK_Z = -30; // v9〜v12（倉庫が奥行き16mだったころ）の奥の壁
+export const V13 = { BACK_Z: -14, STOCK_Z: -22, SALES_X0: -25, START_STOCK: ['st0', 'sb0'], // v13 までの売り場（幅50m・倉庫は奥）
+  STOCK_IDS: ['st0', 'st1', 'st2', 'st3', 'st4', 'sb0', 'sb1', 'sb2', 'sb3', 'sb4'] };
+export const OLD_START_BAYS_V8 = ['b30', 'b31', 'b40', 'b41', 'b50', 'b51', 'b60', 'b61', 'b42', 'b43', 'b52', 'b53']; // v8〜v13 の最初の区画（昔の番号）
+export const NAV_BOUNDS = { minX: -42, maxX: 24, minZ: -21, maxZ: 14 };
+export const PLAYER_BOUNDS = { minX: -43, maxX: 27, minZ: -24, maxZ: 17 };
+export const SPAWN_POINTS = [[-40, 8.2], [22, 8.2], [-40, 7.4], [22, 7.4]];
 export const PLAYER_SPAWN = [0, 3.6];
 export const DELIVERY_AREA = { minX: 2.2, maxX: 7.2, minZ: 10.4, maxZ: 13.0 }; // 店の前の駐車場（空から箱が降ってくる）
 // 発注：1回の配達で運べるのは段ボール最大10箱、送料は1回1000円（固定）
@@ -75,26 +71,26 @@ export function expandTargets(store) {
     const nb = [[c - 1, r], [c + 1, r], [c, r - 1], [c, r + 1]].some(([a, b]) => store.bays?.['b' + a + b]);
     out.push({ id, kind: 'bay', can: nb, cost: expandCost(store, id) });
   }
-  // 倉庫も今ある倉庫のとなり（左右・手前と奥）から
+  // 倉庫も今ある倉庫のとなり（手前と奥）から
   for (const s of STOCK_SECTIONS) {
     if (store.stock?.[s.id]) continue;
-    const nb = [[s.c - 1, s.r], [s.c + 1, s.r], [s.c, 1 - s.r]].some(([c, r]) => { const o = stockAt(c, r); return o && store.stock?.[o.id]; });
+    const nb = STOCK_SECTIONS.some((o) => Math.abs(o.r - s.r) === 1 && store.stock?.[o.id]);
     out.push({ id: s.id, kind: 'stock', can: nb, cost: expandCost(store, s.id), name: s.name });
   }
   return out;
 }
 export function expandCost(store, id) {
-  if (id.startsWith('b')) { const n = Math.max(0, Object.keys(store.bays || {}).length - START_BAYS.length); return Math.round(15000 * Math.pow(1.14, n) / 500) * 500; }
+  if (id.startsWith('b')) { const n = Math.max(0, Object.keys(store.bays || {}).length - START_BAYS.length - (store.freeBays || 0)); return Math.round(15000 * Math.pow(1.14, n) / 500) * 500; }
   const n = Math.max(0, Object.keys(store.stock || {}).length - START_STOCK.length); return Math.round(30000 * Math.pow(1.3, n) / 500) * 500;
 }
 // 置けない場所（入口・通路・荷受け場の確保）
 export function keepClear(store) {
   const k = [
-    { minX: -1.7, maxX: 1.7, minZ: 4.0, maxZ: 6 },
-    { minX: MANAGER.door[0] - 0.4, maxX: MANAGER.door[1] + 0.4, minZ: STOCK_Z, maxZ: STOCK_Z + 1.3 },
+    { minX: -1.7, maxX: 1.7, minZ: 4.0, maxZ: 6 }, // 入口
+    { minX: MANAGER.door[0] - 0.4, maxX: MANAGER.door[1] + 0.4, minZ: MANAGER.z0 - 1.3, maxZ: MANAGER.z0 + 1.3 }, // パソコン室の出入口
   ];
-  for (const s of STOCK_SECTIONS) if (s.door) k.push({ minX: s.door[0] - 0.4, maxX: s.door[1] + 0.4, minZ: BACK_Z - 1.2, maxZ: BACK_Z + 1.2 });
-  k.push({ minX: DOCK.x0 - 0.2, maxX: DOCK.x1 + 0.2, minZ: STOCK_Z, maxZ: STOCK_Z + 1.2 }); // 搬入口
+  for (const s of STOCK_SECTIONS) k.push({ minX: STRIP.x0 - 1.2, maxX: STRIP.x0 + 1.2, minZ: s.door[0] - 0.4, maxZ: s.door[1] + 0.4 }); // 倉庫の出入口
+  k.push({ minX: DOCK.x - 1.2, maxX: DOCK.x + 0.5, minZ: DOCK.z0 - 0.2, maxZ: DOCK.z1 + 0.2 }); // 搬入口
   return k;
 }
 
@@ -105,29 +101,29 @@ export function getWalls(store) {
   const H = (x0, x1, z, type) => { if (x1 - x0 > 0.01) w.push({ minX: x0, maxX: x1, minZ: z - T, maxZ: z + T, type, axis: 'x' }); };
   const V = (z0, z1, x, type) => { if (z1 - z0 > 0.01) w.push({ minX: x - T, maxX: x + T, minZ: z0, maxZ: z1, type, axis: 'z' }); };
   const L = BUILDING.minX, R = BUILDING.maxX;
+  // 外壁：正面（入口）・左・奥・右（搬入口）
   H(L, -DOOR.half, 6, 'front'); H(DOOR.half, R, 6, 'front');
-  V(STOCK_Z, 6, L, 'outer'); V(STOCK_Z, 6, R, 'outer');
-  H(L, MANAGER.door[0], STOCK_Z, 'outer'); H(MANAGER.door[1], DOCK.x0, STOCK_Z, 'outer'); H(DOCK.x1, R, STOCK_Z, 'outer');
-  V(MANAGER.z0, MANAGER.z1, MANAGER.x0, 'outer'); V(MANAGER.z0, MANAGER.z1, MANAGER.x1, 'outer'); H(MANAGER.x0, MANAGER.x1, MANAGER.z0, 'outer');
-  // 売り場と倉庫の境（両側が使えるときだけ出入口が開く）
-  const gaps = STOCK_SECTIONS.filter((s) => s.door && stock[s.id] && bays[bayAt((s.door[0] + s.door[1]) / 2, BACK_Z + 1)]).map((s) => s.door).sort((a, b) => a[0] - b[0]);
-  let x = L;
-  for (const [g0, g1] of gaps) { H(x, g0, BACK_Z, 'inner'); x = g1; }
-  H(x, R, BACK_Z, 'inner');
+  V(BACK_Z, 6, L, 'outer'); H(L, R, BACK_Z, 'outer');
+  V(BACK_Z, DOCK.z0, R, 'outer'); V(DOCK.z1, 6, R, 'outer');
+  // パソコン室の奥の壁（出入口つき）
+  H(MANAGER.x0, MANAGER.door[0], MANAGER.z0, 'inner'); H(MANAGER.door[1], MANAGER.x1, MANAGER.z0, 'inner');
+  // 売り場と右の列の境（倉庫の出入口は、倉庫ととなりの売り場の両方が使えるときだけ開く）
+  const gaps = STOCK_SECTIONS.filter((s) => stock[s.id] && bays[bayAt(STRIP.x0 - 1, (s.door[0] + s.door[1]) / 2)]).map((s) => s.door).sort((a, b) => a[0] - b[0]);
+  let z = BACK_Z;
+  for (const [g0, g1] of gaps) { V(z, g0, STRIP.x0, 'inner'); z = g1; }
+  V(z, 6, STRIP.x0, 'inner');
   // 未購入の売り場区画との仕切り
   for (const id of ALL_BAYS) {
     if (!bays[id]) continue;
     const b = bayRect(id);
     if (b.c > 0 && !bays['b' + (b.c - 1) + b.r]) V(b.minZ, b.maxZ, b.minX, 'part');
-    if (b.c < SALES.cols - 1 && !bays['b' + (b.c + 1) + b.r]) V(b.minZ, b.maxZ, b.maxX, 'part');
+    if (b.c < SALES.cols - 1 && !bays['b' + (b.c + 1) + b.r]) V(b.minZ, b.maxZ, b.maxX, 'part'); // 右はしは倉庫との壁がある
     if (b.r < SALES.rows - 1 && !bays['b' + b.c + (b.r + 1)]) H(b.minX, b.maxX, b.minZ, 'part'); // 奥が未購入
     if (b.r > 0 && !bays['b' + b.c + (b.r - 1)]) H(b.minX, b.maxX, b.maxZ, 'part');               // 手前が未購入
   }
   // 倉庫どうしの仕切り（使える倉庫と使えない倉庫の境目）
   for (const s of STOCK_SECTIONS) {
-    const right = stockAt(s.c + 1, s.r);
-    if (right && !!stock[s.id] !== !!stock[right.id]) V(s.z0, s.z1, s.x1, 'part');
-    const back = stockAt(s.c, s.r + 1);
+    const back = STOCK_SECTIONS.find((o) => o.r === s.r + 1);
     if (back && !!stock[s.id] !== !!stock[back.id]) H(s.x0, s.x1, s.z0, 'part');
   }
   // 区画の境目の柱
@@ -278,6 +274,10 @@ export const PRODUCTS_LIST = [
 ];
 export const PRODUCTS = Object.fromEntries(PRODUCTS_LIST.map((p) => [p.id, p]));
 export const BOX_SIZES = { s: [0.4, 0.22, 0.3], m: [0.5, 0.3, 0.36], l: [0.58, 0.38, 0.42] };
+// 空の段ボール（発注で買える）。どの商品でも1種類だけ詰められる。詰めるとその商品の箱になる
+export const EMPTY_BOX = { id: '_box', name: '空の段ボール', icon: '📦', bx: 'm', qty: 0, color: '#9a7448', place: [], cat: '' };
+export const EMPTY_BOX_PRICE = 200; // 1箱（リサイクルより高い）
+export const boxProd = (pid) => PRODUCTS[pid] || EMPTY_BOX;
 
 // ---------- 設備 ----------
 function shelfSlots(levels, ys, w, d, h, cols, kind, sides = [1], depth = 0.5) {
@@ -626,9 +626,9 @@ export const halfQty = (pid) => Math.ceil(PRODUCTS[pid].qty / 2);
 export const boxUnits = (pid, half) => (half ? halfQty(pid) : PRODUCTS[pid].qty);
 export function closeTime(skills) { return skills.mk_hours ? 24 * 60 : CLOSE_TIME; }
 // お店のレベルは最大30。上がるほど次のレベルまでの経験値がどんどん増える（Lv1→2:250 / Lv5:約950 / Lv10:約2,750 / Lv20:約12,800 / Lv29:約68,000）
-// 経験値は売上 ¥100 につき 1（XP_YEN）
+// 経験値は売上 ¥60 につき 1（XP_YEN）
 export const MAX_LEVEL = 30;
-export const XP_YEN = 100;
+export const XP_YEN = 60;
 export function xpNeed(level) { return Math.round((250 * Math.pow(1.22, level - 1) + 100 * (level - 1)) / 10) * 10; }
 // レベルアップでもらえるSP（高いレベルほど多い）：Lv2〜4は2、Lv5〜9は3 … Lv30は8
 export const spForLevel = (lv) => 2 + Math.floor(lv / 5);

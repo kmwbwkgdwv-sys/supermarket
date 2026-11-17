@@ -4,7 +4,7 @@
       "$code": {
         ".read": "auth != null && $code.length === 12",
         ".write": "auth != null && $code.length === 12",
-        ".validate": "!newData.exists() || (newData.hasChildren(['d', 't']) && newData.child('d').isString() && newData.child('d').val().length < 600000)"
+        ".validate": "!newData.exists() || (newData.hasChildren(['d', 't']) && newData.child('d').isString() && newData.child('d').val().length < 3000000)"
       }
     },
     "lb": {

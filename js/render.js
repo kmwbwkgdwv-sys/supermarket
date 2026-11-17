@@ -1,7 +1,8 @@
 // ===== 描画：店の状態 → 3Dシーン =====
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { FIXTURES, PRODUCTS, BOX_SIZES, slotPositions, marketPrice, tagLocal } from './data.js';
+import { FIXTURES, PRODUCTS, BOX_SIZES, boxProd, slotPositions, marketPrice, tagLocal, BUILDING } from './data.js';
+const SUN_C = [(BUILDING.minX + BUILDING.maxX) / 2 + 2, (BUILDING.minZ + BUILDING.maxZ) / 2 - 1]; // 影を落とす範囲の中心（右の外のトラックも入るよう少し右）
 import { buildFixture, getBeltTex } from './models/fixtures.js';
 import { productParts, productMesh } from './models/products.js';
 import { Character, randomAvatar } from './models/character.js';
@@ -65,7 +66,7 @@ function boxGeo(bx) {
 // 開いた段ボール：上面なし＋内側＋外に開いたフタ4枚
 const openGeoCache = {};
 function openBoxParts(pid) {
-  const p = PRODUCTS[pid], bx = p.bx;
+  const p = boxProd(pid), bx = p.bx;
   let geo = openGeoCache[bx];
   if (!geo) {
     const [w, h, d] = BOX_SIZES[bx];
@@ -130,7 +131,7 @@ export class Renderer {
     this.sun.shadow.mapSize.set(2048, 2048);
     const sc = this.sun.shadow.camera; sc.left = -38; sc.right = 38; sc.top = 40; sc.bottom = -40; sc.near = 1; sc.far = 140; sc.updateProjectionMatrix();
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.03;
-    this.sun.target.position.set(0, 0, -13); // 建物（奥行き約42m）の真ん中あたり
+    this.sun.target.position.set(SUN_C[0], 0, SUN_C[1]); // 建物の真ん中あたり
     this.scene.add(this.hemi, this.sun, this.sun.target);
     this.indoor = [];
     for (let i = 0; i < (this.lite ? 0 : 6); i++) {
@@ -157,7 +158,7 @@ export class Renderer {
     });
     this.boxes = new Instancer(this.prodRoot, (key) => {
       const [pid, open] = key.split('|');
-      return open ? openBoxParts(pid) : [{ g: boxGeo(PRODUCTS[pid].bx), m: mat(0xffffff, { map: boxAtlas(PRODUCTS[pid]), r: 0.85 }) }];
+      return open ? openBoxParts(pid) : [{ g: boxGeo(boxProd(pid).bx), m: mat(0xffffff, { map: boxAtlas(boxProd(pid)), r: 0.85 }) }];
     }, { cast: !this.lite });
     this.boxItems = new Instancer(this.prodRoot, (pid) => productParts(pid));
     this.custItems = new Instancer(this.prodRoot, (pid) => productParts(pid)); // お客さんのかごの中・手に持った商品
@@ -244,7 +245,7 @@ export class Renderer {
     this.sun.intensity = (env ? 1.6 : 2.2) * (0.55 + 0.45 * day) * (1 - night * 0.6);
     this.sun.color.set('#fff4e0').lerp(new THREE.Color('#ffb070'), dusk).lerp(new THREE.Color('#9fb6ff'), night);
     const ang = (h - 6) / 14 * Math.PI;
-    this.sun.position.set(Math.cos(ang) * 18, 34, -1 + Math.sin(ang) * 6);
+    this.sun.position.set(SUN_C[0] + Math.cos(ang) * 18, 34, SUN_C[1] + 12 + Math.sin(ang) * 6);
     this.hemi.intensity = (env ? 0.7 : 1.5) * (1 - night * 0.35);
     const indoor = env ? 6 + night * 16 + dusk * 6 : 0;
     for (const l of this.indoor) l.intensity = indoor;
@@ -350,7 +351,7 @@ export class Renderer {
     if (!this._boxT0) this._boxT0 = now;
     const ready = now - this._boxT0 > 1.5; // 最初に読み込んだ箱は降らせない
     for (const b of store.boxes) {
-      const p = PRODUCTS[b.p]; if (!p) continue;
+      const p = boxProd(b.p);
       const L = b.loc;
       if (!this._seenBox.has(b.id)) {
         this._seenBox.add(b.id);
@@ -691,7 +692,7 @@ export class Renderer {
       const big = f.t === 'checkout' || d.d >= 1;
       put('r', f.x, f.z, d.w * 1.35 + 0.3, d.d * 1.35 + (big ? 0.3 : 0.45), f.r * Math.PI / 2);
     }
-    for (const b of store.boxes) if (b.loc.t === 'f' && b.loc.y < 0.05) { const s = BOX_SIZES[PRODUCTS[b.p]?.bx || 'm']; put('r', b.loc.x, b.loc.z, s[0] * 1.6, s[2] * 1.6, b.loc.ry || 0); }
+    for (const b of store.boxes) if (b.loc.t === 'f' && b.loc.y < 0.05) { const s = BOX_SIZES[boxProd(b.p).bx]; put('r', b.loc.x, b.loc.z, s[0] * 1.6, s[2] * 1.6, b.loc.ry || 0); }
     for (const [x, z] of extra) put('c', x, z, 0.85, 0.85);
     this.blobs.end();
   }

@@ -2,6 +2,7 @@
 import { yen, fmtDuration, formatCode, normalizeCode, randomCode, escapeText } from './util.js';
 import { TRACKS, saveCustom, applySoundMode } from './audio.js';
 import { OPT, SKINS, HAIR_COLORS, CLOTH_COLORS, EYE_COLORS, randomAvatar, sanitizeAvatar } from './models/character.js';
+import { listOwnStores, switchStore, newOwnStore, deleteStore, MAX_OWN_STORES } from './save.js';
 
 // ---------- DOMヘルパー ----------
 export function h(tag, props = {}, ...kids) {
@@ -154,7 +155,7 @@ export function showMenu(app) {
           stat('店レベル', 'Lv.' + st.level), stat('総売上', yen(st.totalSales)), stat('営業日', st.day + '日目'), stat('プレイ時間', fmtDuration(p.playTime))),
         sync),
       h('div', { class: 'menu-btns' },
-        h('button', { class: 'btn big', onclick: () => app.startSolo() }, '🏪 ひとりで経営'),
+        h('button', { class: 'btn big', onclick: () => showStores(app) }, '🏪 ひとりで経営'),
         h('button', { class: 'btn big alt', onclick: () => showRoom(app) }, '👥 みんなで経営（ルーム）'),
         h('div', { class: 'grid2' },
           h('button', { class: 'btn', onclick: () => app.openEditor(false) }, '🎨 キャラメイク'),
@@ -163,6 +164,40 @@ export function showMenu(app) {
           h('button', { class: 'btn ghost', onclick: () => showCode(app, false) }, '🔑 引き継ぎコード')))));
 }
 const stat = (k, v) => h('div', { class: 'stat' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
+
+// ---------- お店をえらぶ（自分のお店は何個でも・ホストした「みんなの店」もひとりで遊べる） ----------
+function showStores(app) {
+  const p = app.profile;
+  const msg = h('p', { class: 'muted small' }, '');
+  const own = listOwnStores(p);
+  const play = async (fn) => { msg.textContent = '読み込み中…'; try { await fn(); } catch (e) { msg.textContent = '⚠ ' + e.message; } };
+  const ownRows = own.map((s) => h('div', { class: 'store-row' + (s.cur ? ' cur' : '') },
+    h('div', { class: 'sr-main' }, h('b', {}, (s.cur ? '⭐ ' : '🏪 ') + (s.n || 'お店')), h('small', {}, `Lv.${s.lv || 1}・${s.day || 1}日目・総売上${yen(s.sales || 0)}`)),
+    h('button', { class: 'btn small', onclick: () => play(async () => { if (!s.cur) { switchStore(p, s.sid); app.saveLocal(); app.renderer.storeRev = -1; } await app.startSolo(); }) }, '▶ 遊ぶ'),
+    s.cur ? null : h('button', { class: 'btn small ghost', title: 'このお店を消す', onclick: async () => {
+      if (!(await confirmBox(`「${s.n}」を消しますか？（もとに戻せません）`, '消す'))) return;
+      deleteStore(p, s.sid); app.saveLocal(); app.syncNow(); showStores(app);
+    } }, '🗑')));
+  const addBtn = own.length < MAX_OWN_STORES
+    ? h('button', { class: 'btn ghost', onclick: async () => {
+      const name = await promptBox('🆕 新しいお店の名前', p.name.slice(0, 8) + 'マート' + (own.length + 1), { max: 16 });
+      if (!name) return;
+      newOwnStore(p, name); app.saveLocal(); app.renderer.storeRev = -1; app.syncNow();
+      play(() => app.startSolo());
+    } }, `＋ 新しいお店を作る（${own.length}/${MAX_OWN_STORES}）`)
+    : h('p', { class: 'muted small' }, `自分のお店は${MAX_OWN_STORES}個までです`);
+  const rooms = (p.rooms || []).filter((r) => r.h);
+  const roomRows = rooms.length ? rooms.map((r) => h('div', { class: 'store-row room' },
+    h('div', { class: 'sr-main' }, h('b', {}, `👥 ${r.n || ''}`), h('small', {}, `ルーム ${r.id}・Lv.${r.lv || 1}・${r.day || 1}日目`)),
+    h('button', { class: 'btn small alt', onclick: () => play(() => app.startSolo({ roomId: r.id })) }, '▶ ひとりで遊ぶ'))) : [h('p', { class: 'muted small' }, 'まだありません（「みんなで経営」でホストになったルームのお店がここに出ます）')];
+  screen('center', h('div', { class: 'card hero stores' }, h('h2', {}, '🏪 お店をえらぶ'),
+    h('div', { class: 'sum-h' }, '自分のお店'), h('div', { class: 'store-list' }, ownRows), addBtn,
+    h('div', { class: 'sum-h' }, '👥 みんなの店（ホストしたルーム）'),
+    h('p', { class: 'muted small' }, 'ひとりで進めた分もみんなの店に保存されるので、次にみんなで集まったときはその続きから遊べます（だれかがルームで遊んでいる間は開けません）'),
+    h('div', { class: 'store-list' }, roomRows),
+    msg,
+    h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => app.showMenu() }, '戻る'))));
+}
 
 function showRoom(app) {
   const inp = h('input', { class: 'inp code-inp', maxlength: 12, placeholder: 'ルームID（英数字4〜12文字）', value: app.lastRoom || '', autocapitalize: 'characters' });
