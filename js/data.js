@@ -83,13 +83,16 @@ export function expandCost(store, id) {
   if (id.startsWith('b')) { const n = Math.max(0, Object.keys(store.bays || {}).length - START_BAYS.length - (store.freeBays || 0)); return Math.round(15000 * Math.pow(1.14, n) / 500) * 500; }
   const n = Math.max(0, Object.keys(store.stock || {}).length - START_STOCK.length); return Math.round(30000 * Math.pow(1.3, n) / 500) * 500;
 }
+// 倉庫の出入口が開いているか（倉庫と、出入口の前の売り場の両方を使っているとき）
+export const doorOpen = (store, s) => !!(store?.stock?.[s.id] && store?.bays?.[bayAt(STRIP.x0 - 1, (s.door[0] + s.door[1]) / 2)]);
 // 置けない場所（入口・通路・荷受け場の確保）
 export function keepClear(store) {
   const k = [
     { minX: -1.7, maxX: 1.7, minZ: 4.0, maxZ: 6 }, // 入口
     { minX: MANAGER.door[0] - 0.4, maxX: MANAGER.door[1] + 0.4, minZ: MANAGER.z0 - 1.3, maxZ: MANAGER.z0 + 1.3 }, // パソコン室の出入口
   ];
-  for (const s of STOCK_SECTIONS) k.push({ minX: STRIP.x0 - 1.2, maxX: STRIP.x0 + 1.2, minZ: s.door[0] - 0.4, maxZ: s.door[1] + 0.4 }); // 倉庫の出入口
+  // 倉庫の出入口：開いている出入口（倉庫ととなりの売り場の両方が使える所）だけ。閉じている所は壁なので壁ぎわに置ける
+  for (const s of STOCK_SECTIONS) if (doorOpen(store, s)) k.push({ minX: STRIP.x0 - 1.2, maxX: STRIP.x0 + 1.2, minZ: s.door[0] - 0.4, maxZ: s.door[1] + 0.4 });
   k.push({ minX: DOCK.x - 1.2, maxX: DOCK.x + 0.5, minZ: DOCK.z0 - 0.2, maxZ: DOCK.z1 + 0.2 }); // 搬入口
   return k;
 }
@@ -108,7 +111,7 @@ export function getWalls(store) {
   // パソコン室の奥の壁（出入口つき）
   H(MANAGER.x0, MANAGER.door[0], MANAGER.z0, 'inner'); H(MANAGER.door[1], MANAGER.x1, MANAGER.z0, 'inner');
   // 売り場と右の列の境（倉庫の出入口は、倉庫ととなりの売り場の両方が使えるときだけ開く）
-  const gaps = STOCK_SECTIONS.filter((s) => stock[s.id] && bays[bayAt(STRIP.x0 - 1, (s.door[0] + s.door[1]) / 2)]).map((s) => s.door).sort((a, b) => a[0] - b[0]);
+  const gaps = STOCK_SECTIONS.filter((s) => doorOpen(store, s)).map((s) => s.door).sort((a, b) => a[0] - b[0]);
   let z = BACK_Z;
   for (const [g0, g1] of gaps) { V(z, g0, STRIP.x0, 'inner'); z = g1; }
   V(z, 6, STRIP.x0, 'inner');

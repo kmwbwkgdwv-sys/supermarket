@@ -1,7 +1,7 @@
 // ===== 経営シミュレーション（ホスト側で実行・three.js 非依存） =====
 import {
   PRODUCTS, PRODUCTS_LIST, FIXTURES, SKILLS, STAFF_ROLES, STAFF_NAMES, BOX_SIZES, DELIVERY_AREA,
-  OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, OLD_BACK_Z, OLD_STOCK_Z, V12_STOCK_Z, V13, OLD_START_BAYS_V8, STAFF_HOME, SALES, STOCK_SECTIONS, bayAt, snapFixture,
+  OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, OLD_BACK_Z, OLD_STOCK_Z, V12_STOCK_Z, V13, OLD_START_BAYS_V8, STAFF_HOME, SALES, STOCK_SECTIONS, bayAt, doorOpen, snapFixture,
   getWalls, zones, keepClear, expandTargets, fixtureFootprint, marketPrice, marketCost, OLD_LICENSES, slotCapacity, slotAccess, rackAccess, checkoutSpot, canPlace,
   staffLimit, STAFF_SLOTS, slotWage, staffSlotOpen, checkoutLimit, closeTime, xpNeed, costMult, productUnlocked, fixtureUnlocked, localToWorld, CELL, TRASH_TYPES, ORDER_MAX_BOXES, SHIPPING_FEE,
   MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits, wageFor, MANAGER, XP_YEN, BUILDING, EMPTY_BOX, EMPTY_BOX_PRICE, boxProd, boxLook,
@@ -650,9 +650,17 @@ export class Sim {
     if (!t.can) return this.err(uid, t.kind === 'bay' ? '買ってある売り場のとなりから広げてください' : '使っている倉庫のとなりから広げてください');
     if (st.money < t.cost) return this.err(uid, 'お金が足りません');
     st.money -= t.cost;
+    const before = STOCK_SECTIONS.filter((x) => doorOpen(st, x)).map((x) => x.id);
     if (t.kind === 'bay') st.bays[t.id] = 1; else st.stock[t.id] = 1;
     this.nav.build(st);
     this.toast(null, t.kind === 'bay' ? '🧱 売り場を広げました！' : '📦 倉庫を広げました！', 'ok');
+    // 新しく開いた倉庫の出入口の前に設備があれば知らせる（倉庫どうしは中でつながっているので、ふさがっていても使える）
+    for (const x of STOCK_SECTIONS) {
+      if (before.includes(x.id) || !doorOpen(st, x)) continue;
+      const r = { minX: x.x0 - 1.2, maxX: x.x0 + 1.2, minZ: x.door[0] - 0.4, maxZ: x.door[1] + 0.4 };
+      const blocked = st.fixtures.some((f) => { if (FIXTURES[f.t]?.air) return false; const o = fixtureFootprint(f.t, f.x, f.z, f.r); return o.minX < r.maxX && o.maxX > r.minX && o.minZ < r.maxZ && o.maxZ > r.minZ; });
+      if (blocked) this.toast(uid, `🚪 ${x.name}の出入口の前に設備があります。通れるように動かしてね`, 'warn');
+    }
     this.sfx('build'); this.bump();
   }
   a_recycle(uid) {
