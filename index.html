@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="screen-orientation" content="landscape">
+  <meta name="x5-orientation" content="landscape">
+  <meta name="theme-color" content="#ff6b35">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="みんなでスーパーを経営する3D協力ゲーム。商品を並べてレジを打ち、スキルボードでお店を大きくしよう！">
+  <title>マートメイツ - みんなでスーパー経営</title>
+  <meta name="apple-mobile-web-app-title" content="マートメイツ">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="application-name" content="マートメイツ">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" sizes="180x180">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="c3d"></canvas>
+  <div id="hud" class="hidden"></div>
+  <div id="touch" class="touch hidden"></div>
+  <div id="screen" class="screen hidden"></div>
+  <div id="modals"></div>
+  <div id="toasts"></div>
+  <div id="rotate" class="rotate"><div class="rot-phone">📱</div><div class="rot-title">横向きにしてね</div><div class="rot-sub">このゲームは横画面専用です</div></div>
+  <div id="boot" class="boot">
+    <div class="boot-badge">🛒</div>
+    <div class="boot-title">マートメイツ</div>
+    <div class="boot-sub">みんなでスーパー経営</div>
+    <div class="bar"><i></i></div>
+    <div class="boot-msg">読み込み中…</div>
+  </div>
+  <noscript>このゲームを遊ぶにはJavaScriptを有効にしてください。</noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

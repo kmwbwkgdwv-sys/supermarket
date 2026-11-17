@@ -1,0 +1,30 @@
+{
+  "rules": {
+    "saves": {
+      "$code": {
+        ".read": "auth != null && $code.length === 12",
+        ".write": "auth != null && $code.length === 12",
+        ".validate": "!newData.exists() || (newData.hasChildren(['d', 't']) && newData.child('d').isString() && newData.child('d').val().length < 600000)"
+      }
+    },
+    "lb": {
+      ".read": "auth != null",
+      ".indexOn": ["lv", "s", "p"],
+      "$pid": {
+        ".write": "auth != null && $pid.length === 10",
+        ".validate": "newData.hasChildren(['n', 'lv', 's', 'p']) && newData.child('n').isString() && newData.child('n').val().length <= 12 && newData.child('lv').isNumber() && newData.child('s').isNumber() && newData.child('p').isNumber()"
+      }
+    },
+    "rooms": {
+      "$rid": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "chat": {
+          "$msg": {
+            ".validate": "newData.hasChildren(['uid', 'n', 'm', 't']) && newData.child('m').isString() && newData.child('m').val().length <= 60"
+          }
+        }
+      }
+    }
+  }
+}
