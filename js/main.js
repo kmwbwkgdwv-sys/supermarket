@@ -225,16 +225,28 @@ class App {
     this.profile.rooms = [e, ...list].slice(0, 8);
     if (!prev || prev.lv !== e.lv || prev.day !== e.day || prev.n !== e.n || prev.h !== e.h) this.saveLocal();
   }
+  // 参加したルームのお店の控え（ひとりで続きを遊ぶとき、クラウドが読めなくても使えるように）
+  cacheShop(id, st) {
+    if (!id || !st) return;
+    const data = { d: JSON.stringify(st), t: Date.now(), n: String(st.name || '').slice(0, 16), lv: st.level, day: st.day, by: this.profile.name, pid: this.profile.pid, solo: 0 };
+    const json = JSON.stringify(data);
+    for (let tries = 0; tries < 10; tries++) {
+      try { localStorage.setItem(this.shopKey(id), json); break; } catch (e) { if (!evictOldShop(this.shopKey(id))) break; }
+    }
+  }
   endGame(fromClose) {
     if (!this.game) return;
     const g = this.game; this.game = null;
     if (g.shared) this.saveShop(true, g, true); // みんなの店を保存
     else if (g.sim) this.profile.store = g.sim.store;
+    if (g.mode === 'client' && g.roomId && g.store && !g.local) { this.cacheShop(g.roomId, g.store); this.rememberRoom(g.roomId, g.store); }
+    const roomSt = (g.mode === 'host' || g.mode === 'client') && g.roomId ? (g.sim?.store || g.store) : null;
     g.stop();
     this.saveGame(true);
     this.pushRank();
     this.renderer.storeRev = -1;
     this.showMenu();
+    if (roomSt) toast(`👥 みんなの店「${roomSt.name}」（Lv.${roomSt.level}）は、メニューの「ひとりで続ける」や「ひとりで経営」→「👥 みんなの店」から、ひとりでも続きを遊べます`, 'info', 5000);
     void fromClose;
   }
 

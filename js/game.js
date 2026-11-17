@@ -167,6 +167,9 @@ export class Game {
     if (this.sim) {
       this.timers.save += dt;
       if (this.timers.save > 20) { this.timers.save = 0; this.app.saveGame(false); }
+    } else if (this.mode === 'client' && this.store && this.roomId && !this.local) {
+      this.timers.save += dt;
+      if (this.timers.save > 45) { this.timers.save = 0; this.app.cacheShop(this.roomId, this.store); }
     }
     this.timers.rank += dt;
     if (this.timers.rank > 90) { this.timers.rank = 0; this.app.pushRank(); }

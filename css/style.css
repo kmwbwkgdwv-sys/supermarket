@@ -428,3 +428,6 @@ body.has-modal .toast { padding: 6px 12px; font-size: 12px; opacity: .95; }
 .store-row .sr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .store-row .sr-main b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .store-row .sr-main small { color: var(--muted); font-weight: 700; }
+/* メニュー：みんなの店をひとりで続けるボタン／お店えらびの説明 */
+.pcard .room-cont { font-size: 12px; padding: 7px 10px; white-space: normal; line-height: 1.3; }
+.store-note { margin: 0 0 4px; line-height: 1.4; }
