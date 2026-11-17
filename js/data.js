@@ -2,9 +2,9 @@
 export const CELL = 0.5;
 // ---------- 店舗レイアウト（原作風：5m区画を少しずつ買い足して広げる） ----------
 export const BAY = 5;
-export const SALES = { x0: -25, z0: 6, cols: 10, rows: 2 }; // 売り場区画 b{列}{行}  行0=通り側（幅50m・最大20区画）
-export const BACK_Z = -4;     // 売り場と倉庫の境目
-export const STOCK_Z = -12;   // 倉庫の奥の壁
+export const SALES = { x0: -25, z0: 6, cols: 10, rows: 4 }; // 売り場区画 b{列}{行}  行0=通り側（幅50m×奥行20m・最大40区画）
+export const BACK_Z = -14;    // 売り場と倉庫の境目（売り場は奥へ4列まで広がる）
+export const STOCK_Z = -22;   // 倉庫の奥の壁
 export const STOCK_SECTIONS = [
   { id: 'st0', name: '倉庫A', x0: -5, x1: 5, door: [2, 4] },
   { id: 'st1', name: '倉庫B（右）', x0: 5, x1: 15, door: [11, 13] },
@@ -13,15 +13,17 @@ export const STOCK_SECTIONS = [
   { id: 'st4', name: '倉庫E（左端）', x0: -25, x1: -15, door: [-23, -21] },
 ];
 export const STOCK_ORDER = ['st4', 'st2', 'st0', 'st1', 'st3']; // 左から順
-export const MANAGER = { x0: -5, x1: 0, z0: -17.5, z1: -12, door: [-3.6, -2.1] };
-export const DOCK = { x0: 0.6, x1: 4.6, z: -12 };
+export const MANAGER = { x0: -5, x1: 0, z0: -27.5, z1: -22, door: [-3.6, -2.1] };
+export const DOCK = { x0: 0.6, x1: 4.6, z: -22 };
 export const DOOR = { x: 0, z: 6, half: 1.2 };
-export const BUILDING = { minX: -25, maxX: 25, minZ: -12, maxZ: 6 };
-// 最初から使える売り場：真ん中の 20m×10m（8区画）。左右に3列ずつ広げられる
-export const START_BAYS = ['b30', 'b31', 'b40', 'b41', 'b50', 'b51', 'b60', 'b61'];
+export const BUILDING = { minX: -25, maxX: 25, minZ: -22, maxZ: 6 };
+// 最初から使える売り場：手前の 20m×10m（8区画）＋倉庫へつながる真ん中の奥 10m×10m（4区画）。
+// そこから左右にも奥にも1区画ずつ広げられる
+export const START_BAYS = ['b30', 'b31', 'b40', 'b41', 'b50', 'b51', 'b60', 'b61', 'b42', 'b43', 'b52', 'b53'];
+export const OLD_BACK_Z = -4; // v7 までの売り場の奥（セーブ移行用）
 export const START_STOCK = ['st0'];
-export const NAV_BOUNDS = { minX: -32, maxX: 32, minZ: -19, maxZ: 14 };
-export const PLAYER_BOUNDS = { minX: -33, maxX: 33, minZ: -24, maxZ: 17 };
+export const NAV_BOUNDS = { minX: -32, maxX: 32, minZ: -29, maxZ: 14 };
+export const PLAYER_BOUNDS = { minX: -33, maxX: 33, minZ: -34, maxZ: 17 };
 export const SPAWN_POINTS = [[-27.5, 8.2], [27.5, 8.2], [-27.5, 7.4], [27.5, 7.4]];
 export const PLAYER_SPAWN = [0, 3.6];
 export const DELIVERY_AREA = { minX: 2.2, maxX: 7.2, minZ: 10.4, maxZ: 13.0 }; // 店の前の駐車場（空から箱が降ってくる）
@@ -70,7 +72,7 @@ export function expandTargets(store) {
   return out;
 }
 export function expandCost(store, id) {
-  if (id.startsWith('b')) { const n = Math.max(0, Object.keys(store.bays || {}).length - START_BAYS.length); return Math.round(15000 * Math.pow(1.22, n) / 500) * 500; }
+  if (id.startsWith('b')) { const n = Math.max(0, Object.keys(store.bays || {}).length - START_BAYS.length); return Math.round(15000 * Math.pow(1.14, n) / 500) * 500; }
   const n = Math.max(0, Object.keys(store.stock || {}).length - 1); return Math.round(30000 * Math.pow(1.45, n) / 500) * 500;
 }
 // 置けない場所（入口・通路・荷受け場の確保）
@@ -105,8 +107,8 @@ export function getWalls(store) {
     const b = bayRect(id);
     if (b.c > 0 && !bays['b' + (b.c - 1) + b.r]) V(b.minZ, b.maxZ, b.minX, 'part');
     if (b.c < SALES.cols - 1 && !bays['b' + (b.c + 1) + b.r]) V(b.minZ, b.maxZ, b.maxX, 'part');
-    if (b.r === 0 && !bays['b' + b.c + 1]) H(b.minX, b.maxX, b.minZ, 'part');
-    if (b.r === 1 && !bays['b' + b.c + 0]) H(b.minX, b.maxX, b.maxZ, 'part');
+    if (b.r < SALES.rows - 1 && !bays['b' + b.c + (b.r + 1)]) H(b.minX, b.maxX, b.minZ, 'part'); // 奥が未購入
+    if (b.r > 0 && !bays['b' + b.c + (b.r - 1)]) H(b.minX, b.maxX, b.maxZ, 'part');               // 手前が未購入
   }
   // 倉庫どうしの仕切り（使える倉庫と使えない倉庫の境目）
   for (let i = 0; i < STOCK_ORDER.length - 1; i++) {
@@ -114,9 +116,9 @@ export function getWalls(store) {
     if (!!stock[a.id] !== !!stock[b.id]) V(STOCK_Z, BACK_Z, a.x1, 'part');
   }
   // 区画の境目の柱
-  for (let i = 1; i < SALES.cols; i++) {
-    const px = SALES.x0 + i * BAY, pz = SALES.z0 - BAY;
-    const near = ['b' + (i - 1) + 0, 'b' + i + 0, 'b' + (i - 1) + 1, 'b' + i + 1].some((id) => bays[id]);
+  for (let i = 1; i < SALES.cols; i++) for (let j = 1; j < SALES.rows; j++) {
+    const px = SALES.x0 + i * BAY, pz = SALES.z0 - j * BAY;
+    const near = ['b' + (i - 1) + (j - 1), 'b' + i + (j - 1), 'b' + (i - 1) + j, 'b' + i + j].some((id) => bays[id]);
     if (near) w.push({ minX: px - 0.22, maxX: px + 0.22, minZ: pz - 0.22, maxZ: pz + 0.22, type: 'pillar', x: px, z: pz });
   }
   return w;

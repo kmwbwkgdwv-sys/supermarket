@@ -1,7 +1,7 @@
 // ===== 経営シミュレーション（ホスト側で実行・three.js 非依存） =====
 import {
   PRODUCTS, PRODUCTS_LIST, FIXTURES, SKILLS, STAFF_ROLES, STAFF_NAMES, BOX_SIZES, DELIVERY_AREA,
-  OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK,
+  OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, BACK_Z, STOCK_Z, OLD_BACK_Z,
   getWalls, zones, keepClear, expandTargets, fixtureFootprint, marketPrice, marketCost, OLD_LICENSES, slotCapacity, slotAccess, rackAccess, checkoutSpot, canPlace,
   staffLimit, STAFF_SLOTS, slotWage, staffSlotOpen, checkoutLimit, closeTime, xpNeed, costMult, productUnlocked, fixtureUnlocked, localToWorld, CELL, TRASH_TYPES, ORDER_MAX_BOXES, SHIPPING_FEE,
 } from './data.js';
@@ -10,7 +10,7 @@ import { rand, randi, pick, dist, dist2, clamp } from './util.js';
 
 export function newStore(name) {
   const st = {
-    v: 7, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
+    v: 8, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
     skills: { start: true, prod_food1: true }, prices: {}, market: {}, marketPrev: {}, staff: [], nid: 100, phase: 'prep', time: OPEN_TIME,
     totalSales: 0, totalCustomers: 0, rev: 1, created: Date.now(), color: '#ff6b35',
     today: { sales: 0, served: 0, lost: 0, orders: 0, ship: 0, xp: 0, vend: 0, recycle: 0 },
@@ -24,19 +24,19 @@ export function newStore(name) {
 }
 function initialFixtures() {
   return [
-    { id: 1, t: 'mboard', x: -2.5, z: -17.12, r: 0 },
-    { id: 2, t: 'fboard', x: -4.62, z: -14.75, r: 1 },
-    { id: 3, t: 'xboard', x: -0.38, z: -14.75, r: 3 },
-    { id: 4, t: 'recycle', x: 8, z: -13.3, r: 2 },
+    { id: 1, t: 'mboard', x: -2.5, z: -27.12, r: 0 },
+    { id: 2, t: 'fboard', x: -4.62, z: -24.75, r: 1 },
+    { id: 3, t: 'xboard', x: -0.38, z: -24.75, r: 3 },
+    { id: 4, t: 'recycle', x: 8, z: -23.3, r: 2 },
     { id: 5, t: 'checkout', x: 3, z: 3.25, r: 2 },
     { id: 6, t: 'shelf', x: -3, z: -3.5, r: 0, s: emptySlots('shelf') },
     { id: 7, t: 'shelf', x: -3, z: -0.75, r: 0, s: emptySlots('shelf') },
-    { id: 8, t: 'rack', x: -4.25, z: -8, r: 1 },
+    { id: 8, t: 'rack', x: -4.25, z: -18, r: 1 },
     { id: 9, t: 'basket', x: -2.25, z: 4.75, r: 0 },
     { id: 10, t: 'plant', x: -4.5, z: 5.5, r: 0 },
     { id: 11, t: 'trash', x: 4.5, z: 5.5, r: 0 },
     { id: 12, t: 'opensign', x: 2.25, z: 5.25, r: 0 },
-    { id: 13, t: 'dumpster', x: -0.9, z: -11.43, r: 0 },
+    { id: 13, t: 'dumpster', x: -0.9, z: -21.43, r: 0 },
   ];
 }
 // 旧レイアウト(v1)のセーブを新しい店舗に引っ越す：設備代は全額返金、棚の商品は箱に戻す
@@ -52,7 +52,7 @@ function migrateV1(st) {
   if (st.skills?.exp1) { delete st.skills.exp1; st.sp = (st.sp || 0) + 3; }
   if (st.skills?.exp2) { delete st.skills.exp2; st.sp = (st.sp || 0) + 4; }
   st.nid = Math.max(st.nid || 100, 200);
-  st.fixtures = initialFixtures();
+  st.fixtures = initialFixtures().map((f) => (f.z < BACK_Z ? { ...f, z: f.z - (BACK_Z - OLD_BACK_Z) } : f)); // v8 で奥へずらすので旧座標で置く
   st.bays = { b20: 1, b21: 1, b30: 1, b31: 1 }; // v2〜v5 の番号（v6 で付け替える）
   st.stock = Object.fromEntries(START_STOCK.map((b) => [b, 1]));
   st.boxes = [];
@@ -143,6 +143,16 @@ export function normalizeStore(st) {
     (st.staff || []).slice(0, 10).forEach((o, i) => { const sl = STAFF_SLOTS[i]; o.slot = sl.no; o.spd = sl.spd; o.wage = slotWage(STAFF_ROLES[o.role] || STAFF_ROLES.stocker, sl.no); });
     if (st.staff) st.staff = st.staff.slice(0, 10);
     st.v = 7;
+  }
+  if (st.v < 8) {
+    // v8：売り場を奥にも広げられるように（奥行き最大20m）。倉庫・マネージャー室を10m奥へ引っ越し、
+    // 倉庫へつながる真ん中の奥の売り場（4区画）をプレゼント
+    const dz = BACK_Z - OLD_BACK_Z;
+    for (const f of st.fixtures || []) if (f.z < OLD_BACK_Z) f.z += dz;
+    for (const b of st.boxes || []) if (b.loc?.t === 'f' && b.loc.z < OLD_BACK_Z && b.loc.z > -40) b.loc.z += dz;
+    st.bays ||= {};
+    for (const id of START_BAYS) st.bays[id] = 1;
+    st.v = 8;
   }
   st.market ||= {}; st.marketPrev ||= {};
   st.bays ||= Object.fromEntries(START_BAYS.map((b) => [b, 1])); st.stock ||= { st0: 1 };
@@ -461,7 +471,7 @@ export class Sim {
   releaseStaff(s) {
     const who = 's:' + s.id, rt = this.dyn.staffRt[s.id];
     const b = this.heldBox(who);
-    if (b) b.loc = { t: 'f', x: rt?.x ?? 0, y: this.stackHeight(rt?.x ?? 0, rt?.z ?? -8, b), z: rt?.z ?? -8, ry: 0 };
+    if (b) b.loc = { t: 'f', x: rt?.x ?? 0, y: this.stackHeight(rt?.x ?? 0, rt?.z ?? STOCK_Z + 4, b), z: rt?.z ?? STOCK_Z + 4, ry: 0 };
     for (const fid in this.dyn.regs) if (this.dyn.regs[fid].op === who) this.dyn.regs[fid].op = null;
     if (rt) { rt.st = 'idle'; rt.t = 0.5; rt.path = null; rt.bid = null; rt.fid = null; rt.msg = null; }
   }
@@ -470,7 +480,7 @@ export class Sim {
     if (!s) return;
     const who = 's:' + s.id;
     const b = this.heldBox(who); const rt = this.dyn.staffRt[s.id];
-    if (b) b.loc = { t: 'f', x: rt?.x ?? 0, y: 0, z: rt?.z ?? -8, ry: 0 };
+    if (b) b.loc = { t: 'f', x: rt?.x ?? 0, y: 0, z: rt?.z ?? STOCK_Z + 4, ry: 0 };
     for (const fid in this.dyn.regs) if (this.dyn.regs[fid].op === who) this.dyn.regs[fid].op = null;
     st.staff = st.staff.filter((o) => o !== s);
     delete this.dyn.staffRt[s.id];
@@ -827,7 +837,7 @@ export class Sim {
     const dyn = this.dyn, st = this.store;
     let rt = dyn.staffRt[s.id];
     if (!rt) {
-      const [x, z] = [rand(-1, 1), -7];
+      const [x, z] = [rand(-1, 1), STOCK_Z + 5]; // 倉庫から出勤
       rt = dyn.staffRt[s.id] = { x, z, ry: 0, st: 'idle', t: rand(0.5, 2), path: null, pi: 0, an: 'idle' };
     }
     const who = 's:' + s.id;

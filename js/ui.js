@@ -70,7 +70,7 @@ function screen(cls, ...kids) {
   const s = $('#screen'); s.innerHTML = ''; s.className = 'screen ' + cls; s.append(...kids); s.classList.remove('hidden');
   return s;
 }
-export function hideScreen() { const s = $('#screen'); s.classList.add('hidden'); s.innerHTML = ''; }
+export function hideScreen() { const s = $('#screen'); try { document.activeElement?.blur?.(); } catch (e) { /* noop */ } s.classList.add('hidden'); s.innerHTML = ''; if (window.scrollX || window.scrollY) window.scrollTo(0, 0); }
 const logo = () => h('div', { class: 'logo' }, h('div', { class: 'logo-badge' }, '🛒'), h('div', {}, h('div', { class: 'logo-title' }, 'マートメイツ'), h('div', { class: 'logo-sub' }, 'MART MATES — みんなでスーパー経営')));
 
 // ---------- 起動〜プロフィール ----------

@@ -379,3 +379,4 @@ body.has-modal .toast { padding: 6px 12px; font-size: 12px; opacity: .95; }
 .spdbar { display: inline-block; width: 80px; height: 8px; border-radius: 6px; background: #eadfd5; overflow: hidden; } .spdbar i { display: block; height: 100%; background: linear-gradient(90deg, #ffd23f, #ff6b35, #e63946); }
 .scard.free { background: #f2fff6; outline: 2px dashed #20c08a; } .scard.locked { opacity: .55; }
 .role.hire { background: #20c08a; color: #fff; }
+@media (max-height: 520px) { .xgrid { gap: 4px; padding: 6px; } .xrow { gap: 4px; } .xcell { min-height: 34px; padding: 3px 2px; } .xrow .xcell b { font-size: 10px; } .xrow .xcell span { font-size: 9px; } }

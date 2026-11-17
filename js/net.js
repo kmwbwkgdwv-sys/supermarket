@@ -62,7 +62,18 @@ export class Cloud {
 
 // ---------- Firebase ルーム ----------
 export class FirebaseRoom extends Emitter {
-  constructor(cloud, id, me) { super(); this.c = cloud; this.id = id; this.me = me; this.unsubs = []; this.joinT = Date.now(); this.role = null; }
+  constructor(cloud, id, me) { super(); this.c = cloud; this.id = id; this.me = me; this.unsubs = []; this.joinT = Date.now(); this.role = null; this._last = {}; this._chat = []; }
+  // 参加の途中（ゲーム画面がまだ聞いていない間）に届いたデータも取りこぼさないよう、最新の状態を覚えておく
+  emit(ev, ...args) {
+    if (ev === 'store' || ev === 'players' || ev === 'dyn') this._last[ev] = args[0];
+    if (ev === 'chat') { this._chat.push(args[0]); if (this._chat.length > 30) this._chat.shift(); }
+    super.emit(ev, ...args);
+  }
+  // ゲーム画面の準備ができたら呼ぶ：覚えている最新の店・プレイヤー・チャットをもう一度流す
+  requestState() {
+    for (const ev of ['store', 'players', 'dyn']) if (this._last[ev] != null) super.emit(ev, this._last[ev]);
+    if (!this._chatReplayed) { this._chatReplayed = true; for (const c of this._chat) super.emit('chat', c); }
+  }
   p(sub) { return this.c.ref(`rooms/${this.id}/${sub}`); }
   async join(profileInfo) {
     const F = this.c.F;

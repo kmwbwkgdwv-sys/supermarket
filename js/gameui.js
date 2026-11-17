@@ -216,13 +216,14 @@ export class GameUI {
       stockRow.style.gridTemplateColumns = `repeat(${STOCK_ORDER.length}, 1fr)`;
       for (const id of STOCK_ORDER) { const s = STOCK_SECTIONS.find((o) => o.id === id); stockRow.append(cell(s.id, s.name, 'stock')); }
       grid.append(stockRow);
-      for (const r of [1, 0]) {
+      // 売り場：上が奥（倉庫側）、下が入口側。左右にも奥にも広げられる
+      for (let r = SALES.rows - 1; r >= 0; r--) {
         const row = h('div', { class: 'xrow' }); row.style.gridTemplateColumns = `repeat(${SALES.cols}, 1fr)`;
-        for (let c = 0; c < SALES.cols; c++) row.append(cell('b' + c + r, `売り場 ${String.fromCharCode(65 + c)}${2 - r}`, 'bay'));
+        for (let c = 0; c < SALES.cols; c++) row.append(cell('b' + c + r, `売り場 ${String.fromCharCode(65 + c)}${SALES.rows - r}`, 'bay'));
         grid.append(row);
       }
       grid.append(h('div', { class: 'xstreet' }, '🚶 歩道・入口 🚪'));
-      body.append(h('p', { class: 'muted small' }, `所持金 ${'¥' + st.money.toLocaleString()}　／　売り場も倉庫も、いま使っている区画のとなりから1区画ずつ広げられます（買うたびに値上がり）`), grid);
+      body.append(h('p', { class: 'muted small' }, `所持金 ${'¥' + st.money.toLocaleString()}　／　売り場は左右にも奥にも、倉庫は左右に、いま使っている区画のとなりから1区画ずつ広げられます（買うたびに値上がり）`), grid);
     };
     const m = modal('🗺️ 店舗拡張ボード', body, { wide: true, onClose: () => this.closed() });
     this.opened(m); draw();

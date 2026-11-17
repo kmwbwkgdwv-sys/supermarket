@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { tex, surf, signTexture, canvasTex, emoji, FONT, shade } from '../textures.js';
 import { mat, smat, glassMat, T, box, rbox, cyl, sph, plane, cone, torus, add, M, bakeGroup, merge, vgrad, wuv } from './geo.js';
 import { basic } from './fixtures.js';
-import { SALES, BAY, STOCK_SECTIONS, MANAGER, DOCK, DOOR, BUILDING, BACK_Z, STOCK_Z, ALL_BAYS, DELIVERY_AREA, bayRect, getWalls } from '../data.js';
+import { SALES, BAY, STOCK_SECTIONS, MANAGER, DOCK, DOOR, BUILDING, BACK_Z, STOCK_Z, ALL_BAYS, DELIVERY_AREA, bayRect, bayAt, getWalls } from '../data.js';
 import { mulberry32 } from '../util.js';
 
 const C = (c, o = {}) => mat(c, { r: 0.7, ...o });
@@ -89,7 +89,8 @@ export class World {
     // マネージャー室の床と重ならないように分けて敷く（重なると床がチラついて二重に見える）
     const asph = smat(surf('asphalt'), 0xdddddd, { r: 0.95 }), mz = MANAGER.z0 - 0.15;
     const BW = R + 6; // 裏の舗装は建物の幅＋α
-    lay(T(plane(BW * 2, 25 + mz), 0, 0.002, (-25 + mz) / 2, -Math.PI / 2), asph);
+    const ZB = STOCK_Z - 13; // 裏の舗装のいちばん奥
+    lay(T(plane(BW * 2, mz - ZB), 0, 0.002, (ZB + mz) / 2, -Math.PI / 2), asph);
     lay(T(plane(BW + MANAGER.x0 - 0.15, STOCK_Z - mz), (-BW + MANAGER.x0 - 0.15) / 2, 0.002, (mz + STOCK_Z) / 2, -Math.PI / 2), asph);
     lay(T(plane(BW - MANAGER.x1 - 0.15, STOCK_Z - mz), (BW + MANAGER.x1 + 0.15) / 2, 0.002, (mz + STOCK_Z) / 2, -Math.PI / 2), asph);
     lay(T(plane(DOCK.x1 + 1 - (MANAGER.x1 + 0.15), 3), (DOCK.x1 + 1 + MANAGER.x1 + 0.15) / 2, 0.01, STOCK_Z - 1.5, -Math.PI / 2), smat(surf('concrete'), 0xffffff, { r: 0.9 }));
@@ -115,7 +116,7 @@ export class World {
     };
     for (let x = -32; x <= 32; x += 8) if (Math.abs(x) > 3) tree(x, 10.5, 0.85);
     for (let i = 0; i < 24; i++) { const a = r() * Math.PI * 2, d = 40 + r() * 30; tree(Math.cos(a) * d, Math.sin(a) * d * 0.8 - 6, 0.9 + r() * 0.7); }
-    for (const [x, z] of [[L - 4, -4], [L - 5, 2], [R + 4, -6], [R + 5, 1], [L - 4, -14], [R + 4, -18]]) tree(x, z, 1.05);
+    for (const [x, z] of [[L - 4, -4], [L - 5, 2], [R + 4, -6], [R + 5, 1], [L - 4, -14], [R + 4, -18], [L - 4.5, -24], [R + 4.5, -27], [L - 5, -31]]) tree(x, z, 1.05);
     // 植え込み
     const bushM = mat('#ffffff', { vc: true, r: 0.9 });
     for (let x = L + 0.5; x <= R - 0.5; x += 1.15) if (Math.abs(x) > 2.4) { const geo = T(new THREE.IcosahedronGeometry(0.42, 2), x, 0.3, 6.62, 0, x, 0, 1.1, 0.75, 0.6); vgrad(geo, '#2c5f2e', '#5f9c48', 0, 0.6); add(g, geo, bushM); }
@@ -147,9 +148,9 @@ export class World {
     }
     // 裏のフェンス
     const fence = C(0x6b7280, { r: 0.5, m: 0.5 });
-    for (let x = -R - 4; x <= R + 4; x += 2) { add(g, cyl(0.03, 0.03, 1.6, 6), fence, x, 0, -24.5); }
-    add(g, T(box(R * 2 + 8, 1.4, 0.02), 0, 0.15), mat(0x9aa3ad, { map: tex('wire'), r: 0.5, m: 0.5, t: true, op: 0.9 }), 0, 0, -24.5);
-    this._truck(g, 2.6, -18.6);
+    for (let x = -R - 4; x <= R + 4; x += 2) { add(g, cyl(0.03, 0.03, 1.6, 6), fence, x, 0, STOCK_Z - 12.5); }
+    add(g, T(box(R * 2 + 8, 1.4, 0.02), 0, 0.15), mat(0x9aa3ad, { map: tex('wire'), r: 0.5, m: 0.5, t: true, op: 0.9 }), 0, 0, STOCK_Z - 12.5);
+    this._truck(g, 2.6, STOCK_Z - 6.6);
     const baked = bakeGroup(g);
     baked.traverse((o) => { if (o.isMesh) o.castShadow = !this.lite; });
     this.root.add(baked);
@@ -185,8 +186,8 @@ export class World {
     const g = new THREE.Group();
     const Rt = this.root;
     // 床：売り場はタイル、倉庫はコンクリート、マネージャー室は木
-    const floor = add(Rt, uvScale(T(plane(R - L, 10), 0, 0.003, 1, -Math.PI / 2), WS()), smat(surf('floor'), 0xffffff, { r: 0.85, env: 0.9 })); floor.castShadow = false;
-    const fl2 = add(Rt, uvScale(T(plane(R - L, 8), 0, 0.004, -8, -Math.PI / 2), WS()), smat(surf('concrete'), 0xffffff, { r: 0.85 })); fl2.castShadow = false;
+    const floor = add(Rt, uvScale(T(plane(R - L, 6 - BACK_Z), 0, 0.003, (6 + BACK_Z) / 2, -Math.PI / 2), WS(), (6 - BACK_Z) / 10), smat(surf('floor'), 0xffffff, { r: 0.85, env: 0.9 })); floor.castShadow = false;
+    const fl2 = add(Rt, uvScale(T(plane(R - L, BACK_Z - STOCK_Z), 0, 0.004, (BACK_Z + STOCK_Z) / 2, -Math.PI / 2), WS(), (BACK_Z - STOCK_Z) / 8), smat(surf('concrete'), 0xffffff, { r: 0.85 })); fl2.castShadow = false;
     const fl3 = add(Rt, T(plane(MANAGER.x1 - MANAGER.x0, STOCK_Z - MANAGER.z0), (MANAGER.x0 + MANAGER.x1) / 2, 0.006, (MANAGER.z0 + STOCK_Z) / 2, -Math.PI / 2), smat(surf('wood'), 0xd8c0a0, { r: 0.55 })); fl3.castShadow = false;
     const brick = smat(surf('brickW'), 0xffffff, { r: 0.9 });
     const paint = smat(surf('wall'), 0xffffff, { r: 0.85 });
@@ -251,14 +252,14 @@ export class World {
     }
     const mat2 = add(Rt, T(rbox(2.6, 0.012, 1.4, 0.004), 0, 0.003, 5.1), C(0x2b3a44, { r: 1 })); mat2.castShadow = false;
     // 天井
-    const ceil = M(uvScale(T(plane(R - L, 18), 0, CEIL, -3, Math.PI / 2), WS()), smat(surf('ceiling'), 0xffffff, { r: 0.9 }), false);
+    const ceil = M(uvScale(T(plane(R - L, 6 - STOCK_Z), 0, CEIL, (6 + STOCK_Z) / 2, Math.PI / 2), WS(), (6 - STOCK_Z) / 18), smat(surf('ceiling'), 0xffffff, { r: 0.9 }), false);
     this.root.add(ceil); this.ceiling = ceil;
     this.panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: tex('troffer'), toneMapped: false });
     // 屋根・パラペット・室外機
     this.roofMat = C(0x8d939b, { r: 0.92 });
-    add(g, T(box(R - L + 0.6, 0.4, 18.6), 0, WALL_H, -3), this.roofMat);
+    add(g, T(box(R - L + 0.6, 0.4, 6 - STOCK_Z + 0.6), 0, WALL_H, (6 + STOCK_Z) / 2), this.roofMat);
     add(g, T(box(31, 0.6, 0.3), 0, WALL_H, 6.2), C(0xf2f0eb, { r: 0.6 }));
-    for (const [x, z] of [[-9, -7], [-5, -6], [7, -4], [11, -8], [0, -9]]) { add(g, T(rbox(1.6, 0.9, 1.2, 0.05), x, WALL_H + 0.4, z), C(0xd6d6d6, { r: 0.5, m: 0.4 })); add(g, T(cyl(0.45, 0.45, 0.05, 16), x, WALL_H + 1.3, z), C(0x555555)); }
+    for (const [x, z] of [[-9, -7], [-5, -6], [7, -4], [11, -8], [0, -9], [-14, -16], [6, -18], [16, -12]]) { add(g, T(rbox(1.6, 0.9, 1.2, 0.05), x, WALL_H + 0.4, z), C(0xd6d6d6, { r: 0.5, m: 0.4 })); add(g, T(cyl(0.45, 0.45, 0.05, 16), x, WALL_H + 1.3, z), C(0x555555)); }
     // ひさし
     this.awningMat = mat(0xffffff, { map: tex('stripes'), r: 0.75 });
     for (const [x0, x1] of [[L, -2.2], [2.2, R]]) add(g, T(box(x1 - x0, 0.05, 1.3), (x0 + x1) / 2, 3.28, 6.6, 0.35), this.awningMat);
@@ -330,7 +331,7 @@ export class World {
     // 倉庫入口の上の壁とのれん・表示
     const strip = new THREE.MeshStandardMaterial({ color: 0xd8eef7, transparent: true, opacity: 0.32, roughness: 0.2, side: THREE.DoubleSide, depthWrite: false });
     for (const s of STOCK_SECTIONS) {
-      const open = store.stock?.[s.id] && store.bays?.['b' + Math.floor(((s.door[0] + s.door[1]) / 2 - SALES.x0) / BAY) + '1'];
+      const open = store.stock?.[s.id] && store.bays?.[bayAt((s.door[0] + s.door[1]) / 2, BACK_Z + 1)];
       if (!open) continue;
       const cx = (s.door[0] + s.door[1]) / 2, w = s.door[1] - s.door[0];
       add(g, wuv(T(box(w, CEIL - 2.5, 0.24), cx, 2.5, BACK_Z), PT), paint);
@@ -351,10 +352,11 @@ export class World {
     }
     for (const s of STOCK_SECTIONS) {
       const cx = (s.x0 + s.x1) / 2;
-      if (store.stock?.[s.id]) for (const dx of [-2.5, 2.5]) for (const z of [-6.5, -9.8]) lights.push(T(plane(1.6, 0.25), cx + dx, CEIL - 0.012, z, Math.PI / 2));
+      if (store.stock?.[s.id]) for (const dx of [-2.5, 2.5]) for (const z of [BACK_Z - 2.5, STOCK_Z + 2.2]) lights.push(T(plane(1.6, 0.25), cx + dx, CEIL - 0.012, z, Math.PI / 2));
       else { const f = M(T(plane(s.x1 - s.x0 - 0.1, STOCK_Z - BACK_Z + 0.1 > 0 ? 7.9 : 7.9), cx, 0.008, (STOCK_Z + BACK_Z) / 2, -Math.PI / 2), smat(surf('concrete'), 0x8f8d86, { r: 0.95 }), false); D.add(f); }
     }
-    lights.push(T(plane(1.6, 0.25), -2.5, WALL_H - 0.612, -14.75, Math.PI / 2));
+    const mcx = (MANAGER.x0 + MANAGER.x1) / 2, mcz = (MANAGER.z0 + MANAGER.z1) / 2;
+    lights.push(T(plane(1.6, 0.25), mcx, WALL_H - 0.612, mcz, Math.PI / 2));
     if (lights.length) D.add(M(merge(lights), this.panelMat, false));
     if (beams.length) add(g, wuv(merge(beams), PT), paint);
     const baked = bakeGroup(g);
@@ -363,8 +365,8 @@ export class World {
     // 室内灯の位置（描画側が使う）
     this.lightSpots = [];
     for (const id of ALL_BAYS) if (store.bays?.[id]) { const b = bayRect(id); this.lightSpots.push([(b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2]); }
-    for (const s of STOCK_SECTIONS) if (store.stock?.[s.id]) this.lightSpots.push([(s.x0 + s.x1) / 2, -8]);
-    this.lightSpots.push([-2.5, -14.75]);
+    for (const s of STOCK_SECTIONS) if (store.stock?.[s.id]) this.lightSpots.push([(s.x0 + s.x1) / 2, (BACK_Z + STOCK_Z) / 2]);
+    this.lightSpots.push([mcx, mcz]);
   }
   update(dt, timeMin, chars) {
     // 自動ドア

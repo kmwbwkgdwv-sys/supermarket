@@ -31,14 +31,14 @@ export class Game {
     this.lastParts = {};
     this.chat = {};
     this.colRev = -1;
-    this.uiBlock = false;
+    this.setUIBlock(false); // 前の画面の状態を引き継がない
     this.camDist = 3.4;
     if (room) this._bindRoom();
     this.ui.show(true);
     this.input.setRoom(!!room);
     this.input.wheelOff = this.input.on('wheel', (d) => { this.camDist = clamp(this.camDist + d * 0.4, 1.8, 6); });
     if (room) this.ui.setRoom([h('b', {}, '👥 ルーム ' + roomId), h('span', { class: 'plist2' })]);
-    if (!this.app.profile.tutorialDone && mode !== 'client') setTimeout(() => this.help(true), 600);
+    if (!this.app.profile.tutorialDone && mode !== 'client') setTimeout(() => { if (this.app.game === this) this.help(true); }, 600);
     // 何もない状態から：まずは発注
     setTimeout(() => { const st = this.store; if (st && st.day === 1 && st.phase === 'prep' && !st.boxes.length && !st.fixtures.some((f) => f.s && f.s.some((x) => x[1] > 0))) toast('📋 まずは倉庫の奥のマネージャー室のボードで商品を発注しよう！', 'ok', 5000); }, 2500);
   }
@@ -78,7 +78,9 @@ export class Game {
     R.on('event', (e) => { try { this.handleEvent(typeof e === 'string' ? JSON.parse(e) : e); } catch (err) { console.warn(err); } });
     R.on('chat', (c) => this.onChat(c));
     R.on('closed', (why) => { if (this._closing) return; this._closing = true; toast('⚠ ' + why, 'warn', 4000); this.app.endGame(true); });
-    if (R.requestState) setTimeout(() => R.requestState(), 300);
+    if (R.requestState) { R.requestState(); setTimeout(() => { if (this.app.game === this && !this.store) R.requestState(); }, 300); }
+    // それでも店が届かないときは数秒おきに取り直す（ホストが準備中で何も変えていなくても入れるように）
+    this._stateRetry = setInterval(() => { if (this.app.game !== this) return clearInterval(this._stateRetry); if (!this.store && R.requestState) R.requestState(); else if (this.store) clearInterval(this._stateRetry); }, 2000);
   }
   setUIBlock(v) {
     this.uiBlock = v; this.input.uiBlock = v;
@@ -563,7 +565,7 @@ export class Game {
       ['🗑️', '空の段ボールは倉庫の大型ゴミ箱へ。ゴミ捨て係を雇うと自動で捨ててくれる'], ['🪧', '入口の看板を「OPEN」にすると営業スタート（CLOSEDのままだとお客さんは来ない）'],
       ['🧾', 'レジに入って商品をタップ→スキャン、おつりを渡す'], ['🏷️', '商品には毎日変わる相場がある。マネージャーボードで値段を自由に変えられる'],
       ['📋', '倉庫の奥のマネージャー室：ボードで発注・スキル・店舗拡張'], ['🌟', 'スキルボードの「🛒 商品」で新しい商品を解放'], ['📊', '閉店すると1日の収支が出て、次の日へ'],
- ['♻️', '空き箱は裏口のリサイクルボックスに入れるとお金になる'], ['🗺️', 'お金がたまったら区画を買い足して売り場・倉庫を広げよう'], ['🔨', '建築ボタンで棚・冷蔵ケース・レジ・看板を設置。置いてある棚やレジは狙って「🔧動かす」（F）で移動できる'], ['🎥', 'Vキー／設定で一人称と三人称を切り替え'],
+ ['♻️', '空き箱は裏口のリサイクルボックスに入れるとお金になる'], ['🗺️', 'お金がたまったら区画を買い足して売り場（左右にも奥にも）や倉庫を広げよう'], ['🔨', '建築ボタンで棚・冷蔵ケース・レジ・看板を設置。置いてある棚やレジは狙って「🔧動かす」（F）で移動できる'], ['🎥', 'Vキー／設定で一人称と三人称を切り替え'],
     ];
     m.append(...steps.map(([i, t]) => h('div', { class: 'help-row' }, h('span', { class: 'hi' }, i), h('span', {}, t))));
     const md = modal('❓ 遊び方', [m, h('button', { class: 'btn big', onclick: () => md.close() }, 'わかった！')], { onClose: () => { this.ui.closed(); if (first) { this.app.profile.tutorialDone = true; this.app.saveLocal(); } } });
@@ -574,6 +576,7 @@ export class Game {
     this.ui.closeAll(); this.ui.show(false);
     this.R.setHighlight(null); this.R.setGhost(null); this.R.setFixtureHidden(null);
     this.R.syncChars([], 0.016);
+    clearInterval(this._stateRetry);
     if (this.room) { try { this.room.leave(); } catch (e) { /* noop */ } }
     this.input.setRoom(false);
     this.input.pointerFree = false;

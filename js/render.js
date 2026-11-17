@@ -128,9 +128,9 @@ export class Renderer {
     this.hemi = new THREE.HemisphereLight(0xe8f4ff, 0xb7a58f, 1.2);
     this.sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
     this.sun.shadow.mapSize.set(2048, 2048);
-    const sc = this.sun.shadow.camera; sc.left = -34; sc.right = 34; sc.top = 30; sc.bottom = -30; sc.near = 1; sc.far = 120; sc.updateProjectionMatrix();
+    const sc = this.sun.shadow.camera; sc.left = -36; sc.right = 36; sc.top = 36; sc.bottom = -36; sc.near = 1; sc.far = 130; sc.updateProjectionMatrix();
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.03;
-    this.sun.target.position.set(0, 0, -2);
+    this.sun.target.position.set(0, 0, -9); // 建物（奥行き約34m）の真ん中あたり
     this.scene.add(this.hemi, this.sun, this.sun.target);
     this.indoor = [];
     for (let i = 0; i < (this.lite ? 0 : 6); i++) {
@@ -231,7 +231,7 @@ export class Renderer {
     this.sun.intensity = (env ? 1.6 : 2.2) * (0.55 + 0.45 * day) * (1 - night * 0.6);
     this.sun.color.set('#fff4e0').lerp(new THREE.Color('#ffb070'), dusk).lerp(new THREE.Color('#9fb6ff'), night);
     const ang = (h - 6) / 14 * Math.PI;
-    this.sun.position.set(Math.cos(ang) * 18, 34, 10 + Math.sin(ang) * 6);
+    this.sun.position.set(Math.cos(ang) * 18, 34, 3 + Math.sin(ang) * 6);
     this.hemi.intensity = (env ? 0.7 : 1.5) * (1 - night * 0.35);
     const indoor = env ? 6 + night * 16 + dusk * 6 : 0;
     for (const l of this.indoor) l.intensity = indoor;
@@ -242,7 +242,8 @@ export class Renderer {
   // ---------- 店の状態を反映 ----------
   _placeIndoor() {
     const spots = this.world.lightSpots || [];
-    this.indoor.forEach((l, i) => { const s = spots[i]; l.visible = !!s; if (s) l.position.set(s[0], 3.4, s[1]); });
+    const n = this.indoor.length; // 数が少ないので、照明のある場所から均等に選ぶ
+    this.indoor.forEach((l, i) => { const s = spots.length > n ? spots[Math.floor((i + 0.5) * spots.length / n)] : spots[i]; l.visible = !!s; if (s) l.position.set(s[0], 3.4, s[1]); });
   }
   syncStore(store) {
     const wk = this.world._key;
