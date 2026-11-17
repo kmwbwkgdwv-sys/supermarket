@@ -9,7 +9,7 @@ const SKEY = 'martmates.settings.v1';
 export const DEFAULT_SETTINGS = {
   lite: false, ultra: false, shadows: true, res: 1, fov: 70,
   sens: 1, invertY: false, btnScale: 1, layout: {}, touchUI: 'auto', cam: 'first',
-  bgm: 'pop', bgmVol: 0.6, sfxVol: 0.8, bgPlay: true, names: true,
+  bgm: 'pop', bgmVol: 0.6, sfxVol: 0.8, bgPlay: false, silentPlay: false, names: true,
 };
 
 function ls() { try { return window.localStorage; } catch (e) { return null; } }
@@ -27,6 +27,8 @@ export function loadSettings() {
   }
   // v3：一人称視点がデフォルトに（一度だけ切り替え）
   if (!s.__fp) { out.cam = 'first'; out.__fp = true; }
+  // v6.6：BGM はふだんゲームの中だけで鳴らす（ダイナミックアイランドに出さない）。一度だけオフに戻す
+  if (!s.__island) { out.bgPlay = false; out.__island = true; }
   return out;
 }
 export function saveSettings(s) { try { ls()?.setItem(SKEY, JSON.stringify(s)); } catch (e) { /* noop */ } }

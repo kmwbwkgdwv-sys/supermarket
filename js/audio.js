@@ -195,65 +195,119 @@ function encodeWav(chans, n, sr) {
 }
 
 // ---------- 再生管理 ----------
+// 効果音と音楽で同じ AudioContext を使う（同時に鳴らせる）
+let _ctx = null;
+export function audioCtx() {
+  if (!_ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+    try { _ctx = new AC({ latencyHint: 'interactive' }); } catch (e) { _ctx = new AC(); }
+  }
+  return _ctx;
+}
+// iPhone の音の扱い：ふだんはゲームの中だけで鳴らす（ダイナミックアイランドやロック画面に出さない）
+function setSession(settings) {
+  try {
+    if (!navigator.audioSession) return;
+    navigator.audioSession.type = settings.bgPlay || settings.silentPlay ? 'playback' : 'ambient';
+  } catch (e) { /* 未対応 */ }
+}
 export class Music {
   constructor(settings) {
     this.settings = settings;
-    this.el = new Audio(); this.el.loop = true; this.el.preload = 'auto';
-    this.el.setAttribute('playsinline', ''); this.el.crossOrigin = 'anonymous';
-    this.cache = new Map(); this.current = null; this.unlocked = false; this.loading = null;
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* 未対応 */ }
+    this.el = null;          // バックグラウンド再生をオンにしたときだけ使う <audio>
+    this.blobs = new Map(); this.urls = new Map(); this.bufs = new Map();
+    this.src = null; this.gain = null; this.current = null; this.mode = null; this.unlocked = false; this.loading = null;
+    setSession(settings);
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && !this.settings.bgPlay) this.el.pause();
-      else if (!document.hidden && this.unlocked && this.current && this.settings.bgm !== 'off') this.el.play().catch(() => {});
+      if (document.hidden) {
+        if (!this.settings.bgPlay) { this.el?.pause(); _ctx?.suspend?.().catch?.(() => {}); }
+      } else if (this.unlocked) {
+        _ctx?.resume?.().catch?.(() => {});
+        if (this.mode === 'el' && this.current && this.settings.bgm !== 'off') this.el?.play().catch(() => {});
+      }
     });
-    this._mediaSession();
-  }
-  _mediaSession() {
-    const ms = navigator.mediaSession; if (!ms) return;
-    try {
-      ms.setActionHandler('play', () => this.el.play());
-      ms.setActionHandler('pause', () => this.el.pause());
-      ms.setActionHandler('nexttrack', () => this.step(1));
-      ms.setActionHandler('previoustrack', () => this.step(-1));
-    } catch (e) { /* 一部ブラウザ */ }
   }
   step(d) {
     const ids = TRACKS.map((t) => t.id);
     let i = ids.indexOf(this.settings.bgm); i = (i + d + ids.length) % ids.length;
     this.settings.bgm = ids[i]; this.play(ids[i]); this.onChange && this.onChange(ids[i]);
   }
-  async unlock() { this.unlocked = true; await this.play(this.settings.bgm); }
-  setVolume(v) { this.el.volume = Math.max(0, Math.min(1, v)); }
-  async play(id) {
-    this.setVolume(this.settings.bgmVol ?? 0.6);
-    if (id === 'off') { this.el.pause(); this.current = null; return; }
-    if (id === 'custom') {
-      const blob = await loadCustom();
-      if (!blob) { this.settings.bgm = 'pop'; return this.play('pop'); }
-      this._set('custom', URL.createObjectURL(blob), '自分の曲', 'マイミュージック');
-      return;
-    }
+  async unlock() { this.unlocked = true; try { await audioCtx()?.resume(); } catch (e) { /* noop */ } await this.play(this.settings.bgm); }
+  setVolume(v) {
+    v = Math.max(0, Math.min(1, v));
+    if (this.gain) this.gain.gain.value = v;
+    if (this.el) this.el.volume = v;
+  }
+  _stopWA() { if (this.src) { try { this.src.stop(); } catch (e) { /* noop */ } try { this.src.disconnect(); } catch (e) { /* noop */ } this.src = null; } }
+  _stopEl() { if (this.el) { this.el.pause(); } this._clearMeta(); }
+  _clearMeta() {
+    const ms = navigator.mediaSession; if (!ms) return;
+    try { ms.metadata = null; ms.playbackState = 'none'; for (const k of ['play', 'pause', 'nexttrack', 'previoustrack']) ms.setActionHandler(k, null); } catch (e) { /* noop */ }
+  }
+  async _blob(id) {
+    if (id === 'custom') return { blob: await loadCustom(), title: '自分の曲', mood: 'マイミュージック' };
     const tr = TRACKS.find((t) => t.id === id) || TRACKS[0];
-    let url = this.cache.get(tr.id);
-    if (!url) {
+    let blob = this.blobs.get(tr.id);
+    if (!blob) {
       this.loading = tr.id; this.onLoading && this.onLoading(true);
       try {
         const key = 'bgm-' + tr.id + '-' + BGM_VER;
-        let blob = await idbGet(key);
+        blob = await idbGet(key);
         if (!blob) { blob = await renderTrack(tr); idbPut(key, blob).catch(() => {}); }
-        url = URL.createObjectURL(blob); this.cache.set(tr.id, url);
-      } catch (e) { console.warn('BGM生成失敗', e); this.onLoading && this.onLoading(false); return; }
+        this.blobs.set(tr.id, blob);
+      } catch (e) { console.warn('BGM生成失敗', e); blob = null; }
       this.onLoading && this.onLoading(false);
-      if (this.settings.bgm !== tr.id) return;
     }
-    this._set(tr.id, url, tr.name, tr.mood);
+    return { blob, title: tr.name, mood: tr.mood };
   }
-  _set(id, url, title, mood) {
-    if (this.current !== id) { this.el.src = url; this.current = id; }
-    if (this.unlocked) this.el.play().catch((e) => console.warn('再生できません', e));
-    if (navigator.mediaSession && window.MediaMetadata) {
-      try { navigator.mediaSession.metadata = new MediaMetadata({ title, artist: 'Mart Mates', album: mood }); } catch (e) { /* noop */ }
+  async play(id) {
+    setSession(this.settings);
+    const vol = this.settings.bgmVol ?? 0.6;
+    if (id === 'off') { this._stopWA(); this._stopEl(); this.current = null; return; }
+    const { blob, title, mood } = await this._blob(id);
+    if (!blob) { if (id === 'custom') { this.settings.bgm = 'pop'; return this.play('pop'); } return; }
+    if (this.settings.bgm !== id) return; // 生成中に曲が変わった
+    const mode = this.settings.bgPlay ? 'el' : 'wa';
+    if (mode === 'el') {
+      // バックグラウンド再生：<audio> で流す（ロック画面・ダイナミックアイランドにも出る）
+      this._stopWA();
+      if (!this.el) { this.el = new Audio(); this.el.loop = true; this.el.preload = 'auto'; this.el.setAttribute('playsinline', ''); }
+      let url = this.urls.get(id);
+      if (!url || id === 'custom') { url = URL.createObjectURL(blob); this.urls.set(id, url); }
+      if (this.current !== id || this.mode !== 'el') this.el.src = url;
+      this.el.volume = vol;
+      this.mode = 'el'; this.current = id;
+      if (this.unlocked) this.el.play().catch((e) => console.warn('再生できません', e));
+      const ms = navigator.mediaSession;
+      if (ms && window.MediaMetadata) {
+        try {
+          ms.metadata = new MediaMetadata({ title, artist: 'Mart Mates', album: mood });
+          ms.setActionHandler('play', () => this.el.play()); ms.setActionHandler('pause', () => this.el.pause());
+          ms.setActionHandler('nexttrack', () => this.step(1)); ms.setActionHandler('previoustrack', () => this.step(-1));
+        } catch (e) { /* noop */ }
+      }
+      return;
     }
+    // ふだん：効果音と同じ AudioContext でループ再生（アイランドには出ない・効果音と同時に鳴る）
+    this._stopEl();
+    const ctx = audioCtx(); if (!ctx) return;
+    let buf = this.bufs.get(id);
+    if (!buf || id === 'custom') {
+      try {
+        const ab = await blob.arrayBuffer();
+        buf = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+        if (id !== 'custom') this.bufs.set(id, buf);
+      } catch (e) { console.warn('BGMを読み込めません', e); return; }
+    }
+    if (this.settings.bgm !== id || this.settings.bgPlay) return;
+    if (!this.gain) { this.gain = ctx.createGain(); this.gain.connect(ctx.destination); }
+    this.gain.gain.value = vol;
+    if (!this.unlocked) return; // 最初のタップまでは準備だけ
+    if (this.mode === 'wa' && this.current === id && this.src) return; // もう流れている
+    this._stopWA();
+    const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.connect(this.gain);
+    s.start(); this.src = s; this.mode = 'wa'; this.current = id;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   }
 }
 
@@ -278,8 +332,8 @@ export const loadCustom = () => idbGet('bgm');
 export class Sfx {
   constructor(settings) { this.settings = settings; this.ctx = null; this.last = {}; }
   unlock() {
-    if (!this.ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; this.ctx = new AC(); this.master = this.ctx.createGain(); this.master.connect(this.ctx.destination); }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (!this.ctx) { this.ctx = audioCtx(); if (!this.ctx) return; this.master = this.ctx.createGain(); this.master.connect(this.ctx.destination); }
+    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
   }
   play(name, vol = 1) {
     const ctx = this.ctx; if (!ctx || ctx.state !== 'running') return;
