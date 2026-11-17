@@ -1,7 +1,7 @@
 // ===== 描画：店の状態 → 3Dシーン =====
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { FIXTURES, PRODUCTS, BOX_SIZES, slotPositions, marketPrice } from './data.js';
+import { FIXTURES, PRODUCTS, BOX_SIZES, slotPositions, marketPrice, tagLocal } from './data.js';
 import { buildFixture, getBeltTex } from './models/fixtures.js';
 import { productParts, productMesh } from './models/products.js';
 import { Character, randomAvatar } from './models/character.js';
@@ -128,9 +128,9 @@ export class Renderer {
     this.hemi = new THREE.HemisphereLight(0xe8f4ff, 0xb7a58f, 1.2);
     this.sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
     this.sun.shadow.mapSize.set(2048, 2048);
-    const sc = this.sun.shadow.camera; sc.left = -36; sc.right = 36; sc.top = 36; sc.bottom = -36; sc.near = 1; sc.far = 130; sc.updateProjectionMatrix();
+    const sc = this.sun.shadow.camera; sc.left = -38; sc.right = 38; sc.top = 40; sc.bottom = -40; sc.near = 1; sc.far = 140; sc.updateProjectionMatrix();
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.03;
-    this.sun.target.position.set(0, 0, -9); // 建物（奥行き約34m）の真ん中あたり
+    this.sun.target.position.set(0, 0, -13); // 建物（奥行き約42m）の真ん中あたり
     this.scene.add(this.hemi, this.sun, this.sun.target);
     this.indoor = [];
     for (let i = 0; i < (this.lite ? 0 : 6); i++) {
@@ -231,7 +231,7 @@ export class Renderer {
     this.sun.intensity = (env ? 1.6 : 2.2) * (0.55 + 0.45 * day) * (1 - night * 0.6);
     this.sun.color.set('#fff4e0').lerp(new THREE.Color('#ffb070'), dusk).lerp(new THREE.Color('#9fb6ff'), night);
     const ang = (h - 6) / 14 * Math.PI;
-    this.sun.position.set(Math.cos(ang) * 18, 34, 3 + Math.sin(ang) * 6);
+    this.sun.position.set(Math.cos(ang) * 18, 34, -1 + Math.sin(ang) * 6);
     this.hemi.intensity = (env ? 0.7 : 1.5) * (1 - night * 0.35);
     const indoor = env ? 6 + night * 16 + dusk * 6 : 0;
     for (const l of this.indoor) l.intensity = indoor;
@@ -295,10 +295,7 @@ export class Renderer {
           this.products.push(p, _m2.multiplyMatrices(fm, _m), null);
         }
         const price = getPrice(store, p), warn = price > priceLimit(store, p) ? 1 : 0;
-        let tx = sl.x, ty = sl.y - 0.04, tz = sl.z + sl.side * (sl.d / 2 + 0.024);
-        if (f.t === 'freezer') { ty = 0.72; tz = 0.506; }
-        if (f.t === 'produce') { ty = sl.y + 0.02; tz = sl.z + sl.d / 2 + 0.045; }
-        if (f.t === 'fridge') { ty = sl.y - 0.03; tz = 0.392; }
+        const [tx, ty, tz] = tagLocal(f.t, sl); // 値札（狙うと値段を変えられる）
         _m.compose(_v.set(tx, ty, tz), _q.setFromAxisAngle(UP, sl.side < 0 ? Math.PI : 0), _s);
         this.tags.push(`${p}|${price}|${warn}`, _m2.multiplyMatrices(fm, _m), { fid: f.id, si });
       });

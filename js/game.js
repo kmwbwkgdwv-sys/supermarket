@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Sim, normalizeStore, getPrice, priceLimit } from './sim.js';
 import { FIXTURES, PRODUCTS, PLAYER_BOUNDS, PLAYER_SPAWN, BUILDING, MANAGER, STAFF_ROLES, TRASH_TYPES, DELIVERY_AREA, marketPrice, getWalls, fixtureFootprint, snapFixture, worldToLocal, pickSlot, pickBoxSlot,
-  checkoutSpot, localToWorld, slotCapacity } from './data.js';
+  checkoutSpot, localToWorld, slotCapacity, pickTag, tagLocal } from './data.js';
 import { clamp, yen, dist, angleLerp, lerp } from './util.js';
 import { toast, h, modal } from './ui.js';
 import { sanitizeAvatar } from './models/character.js';
@@ -19,7 +19,7 @@ export class Game {
     this.ui.bind(this);
     this.players = {};
     this.events = [];
-    if (mode !== 'client') { this.sim = new Sim(app.profile.store); this.store = this.sim.store; this.sim.players[this.me] = { x: 0, z: 0, name: app.profile.name }; }
+    if (mode !== 'client') { this.sim = new Sim(app.profile.store); this.store = this.sim.store; this.sim.players[this.me] = { x: 0, z: 0, name: app.profile.name }; this.sim.room = !!room; this.sim.custCap = app.renderer.lite ? 24 : 36; }
     else { this.store = null; }
     this.dyn = null;
     const [sx, sz] = PLAYER_SPAWN;
@@ -103,7 +103,7 @@ export class Game {
         this.app.sfx.play(e.s, v); break;
       }
       case 'levelup':
-        toast(`🎉 レベルアップ！ Lv.${e.level}（SP獲得）`, 'level', 3500);
+        toast(e.max ? `👑 最高レベル Lv.${e.level} に到達！（SP+${e.sp || 1}）` : `🎉 レベルアップ！ Lv.${e.level}（SP+${e.sp || 1}）${this.room ? '　SPはルームのみんなで共有' : ''}`, 'level', 3500);
         if (e.prods?.length) setTimeout(() => toast(`🆕 新しい商品をスキルボードで解放できるようになりました：${e.prods.join('・')}`, 'ok', 5000), 1200);
         break;
       case 'summary': this.ui.closeAll(); this.ui.showSummary(e.data, this.mode !== 'client'); this.leaveRegister(true); if (this.sim) this.app.saveGame(true); break;
@@ -114,6 +114,14 @@ export class Game {
         break;
       }
       case 'sale': if (e.who === me) toast(`💴 +${yen(e.total)}`, 'money', 1400); break;
+      case 'review': {
+        // 口コミはときどきだけ知らせる（とても良い・悪いとき）
+        const r = e.r, now = performance.now();
+        if (!r || (r.s > 1 && r.s < 5) || now - (this._rvT || 0) < 25000) break;
+        this._rvT = now;
+        toast(`💬 口コミ ${'★'.repeat(r.s)}${'☆'.repeat(5 - r.s)}「${r.m}」`, r.s <= 2 ? 'warn' : 'ok', 3200);
+        break;
+      }
       default: break;
     }
   }
@@ -131,7 +139,7 @@ export class Game {
   update(dt) {
     const st = this.store;
     if (this.sim) {
-      this.sim.players[this.me] = { x: this.pc.x, z: this.pc.z };
+      this.sim.players[this.me] = { x: this.pc.x, z: this.pc.z, name: this.app.profile.name };
       this.sim.tick(dt);
       this.dyn = this.sim.dynSnapshot();
       if (this.sim.events.length) {
@@ -247,7 +255,7 @@ export class Game {
         const [lx, lz] = worldToLocal(f, hit.point.x, hit.point.z);
         const def = FIXTURES[f.t];
         hit.f = f;
-        if (def.slots) hit.si = pickSlot(f.t, lx, hit.point.y, lz);
+        if (def.slots) { hit.si = pickSlot(f.t, lx, hit.point.y, lz); hit.ti = pickTag(f, lx, hit.point.y, lz); }
         if (def.boxSlots) hit.bi = pickBoxSlot(f.t, lx, hit.point.y);
       }
       return hit;
@@ -321,13 +329,22 @@ export class Game {
     const f = t.f, def = FIXTURES[f.t];
     // 棚やレジは狙うだけで「動かす」（F／📦ボタン）
     if (!def.fixed) A.box = { label: '動かす', icon: '🔧', fn: () => this.startMove(f) };
-    if (def.slots && t.si >= 0) {
+    if (def.slots && t.ti >= 0) {
+      // 値札を狙っている → その商品の値段を変えられる
+      const s = f.s[t.ti], sl = def.slots[t.ti], p = PRODUCTS[s[0]], price = getPrice(st, s[0]);
+      const [tx, ty, tz] = tagLocal(f.t, sl);
+      A.slot = [f.id, { x: tx, y: ty - 0.045, z: tz, w: 0.15, h: 0.09, d: 0.05 }];
+      A.info = `🏷 <b>${p.icon} ${p.name}</b> の値札<br>売値 <b>${yen(price)}</b>（相場 ${yen(marketPrice(st, s[0]))}・${yen(priceLimit(st, s[0]))}まで売れる）${price > priceLimit(st, s[0]) ? '<br><b style="color:#ff6b81">🚫 高すぎて売れません</b>' : ''}`;
+      A.act = { label: '値段を変える', icon: '🏷', fn: () => this.ui.openPrice(s[0]) };
+      if (s[1] === 0) A.alt = { label: 'ラベル解除', fn: () => this.act({ t: 'clearSlot', fid: f.id, si: t.ti }) };
+      return A;
+    } else if (def.slots && t.si >= 0) {
       const s = f.s[t.si], sl = def.slots[t.si];
       A.slot = [f.id, sl];
       if (s[0]) {
         const p = PRODUCTS[s[0]], price = getPrice(st, s[0]);
         A.info = `<b>${p.icon} ${p.name}</b> ${s[1]}/${slotCapacity(s[0], sl)}<br>売値 ${yen(price)}（相場 ${yen(marketPrice(st, s[0]))}）${price > priceLimit(st, s[0]) ? '<br><b style="color:#ff6b81">🚫 高すぎて売れません</b>' : ''}`;
-        A.act = { label: '値段', fn: () => this.ui.openPrice(s[0]) };
+        A.hint = '🏷 棚のふちの値札を狙うと値段を変えられます';
         if (s[1] === 0) A.alt = { label: 'ラベル解除', fn: () => this.act({ t: 'clearSlot', fid: f.id, si: t.si }) };
       } else { A.info = `${def.name}：空き（箱を持って補充）`; A.hint = '商品の箱を持ってきて「補充」しよう'; }
       return A;
@@ -563,9 +580,9 @@ export class Game {
       ['📦', '段ボールを持って「開ける」（F／📦ボタン）→ 売り場の棚を狙って「補充」（長押しで連続）。閉じていると補充できない'],
       ['🏷️', '補充するとその商品の値札がつく。品出し係は値札のついた棚にだけ補充しに行く（値札がないと働かない）'],
       ['🗑️', '空の段ボールは倉庫の大型ゴミ箱へ。ゴミ捨て係を雇うと自動で捨ててくれる'], ['🪧', '入口の看板を「OPEN」にすると営業スタート（CLOSEDのままだとお客さんは来ない）'],
-      ['🧾', 'レジに入って商品をタップ→スキャン、おつりを渡す'], ['🏷️', '商品には毎日変わる相場がある。マネージャーボードで値段を自由に変えられる'],
+      ['🧾', 'レジに入って商品をタップ→スキャン、おつりを渡す'], ['🏷️', '商品には毎日変わる相場がある。値段は棚のふちの値札を狙って「値段を変える」で変えられる（相場の+20%までなら売れる）'],
       ['📋', '倉庫の奥のマネージャー室：ボードで発注・スキル・店舗拡張'], ['🌟', 'スキルボードの「🛒 商品」で新しい商品を解放'], ['📊', '閉店すると1日の収支が出て、次の日へ'],
- ['♻️', '空き箱は裏口のリサイクルボックスに入れるとお金になる'], ['🗺️', 'お金がたまったら区画を買い足して売り場（左右にも奥にも）や倉庫を広げよう'], ['🔨', '建築ボタンで棚・冷蔵ケース・レジ・看板を設置。置いてある棚やレジは狙って「🔧動かす」（F）で移動できる'], ['🎥', 'Vキー／設定で一人称と三人称を切り替え'],
+ ['♻️', '空き箱は裏口のリサイクルボックスに入れるとお金になる'], ['🗺️', 'お金がたまったら区画を買い足して、売り場も倉庫も左右・奥に広げよう'], ['🔨', '建築ボタンで棚・冷蔵ケース・レジ・看板を設置。置いてある棚やレジは狙って「🔧動かす」（F）で移動できる'], ['🎥', 'Vキー／設定で一人称と三人称を切り替え'],
     ];
     m.append(...steps.map(([i, t]) => h('div', { class: 'help-row' }, h('span', { class: 'hi' }, i), h('span', {}, t))));
     const md = modal('❓ 遊び方', [m, h('button', { class: 'btn big', onclick: () => md.close() }, 'わかった！')], { onClose: () => { this.ui.closed(); if (first) { this.app.profile.tutorialDone = true; this.app.saveLocal(); } } });

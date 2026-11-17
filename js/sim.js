@@ -1,33 +1,34 @@
 // ===== 経営シミュレーション（ホスト側で実行・three.js 非依存） =====
 import {
   PRODUCTS, PRODUCTS_LIST, FIXTURES, SKILLS, STAFF_ROLES, STAFF_NAMES, BOX_SIZES, DELIVERY_AREA,
-  OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, BACK_Z, STOCK_Z, OLD_BACK_Z,
+  OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, BACK_Z, STOCK_Z, OLD_BACK_Z, OLD_STOCK_Z,
   getWalls, zones, keepClear, expandTargets, fixtureFootprint, marketPrice, marketCost, OLD_LICENSES, slotCapacity, slotAccess, rackAccess, checkoutSpot, canPlace,
   staffLimit, STAFF_SLOTS, slotWage, staffSlotOpen, checkoutLimit, closeTime, xpNeed, costMult, productUnlocked, fixtureUnlocked, localToWorld, CELL, TRASH_TYPES, ORDER_MAX_BOXES, SHIPPING_FEE,
+  MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits,
 } from './data.js';
 import { NavGrid } from './nav.js';
 import { rand, randi, pick, dist, dist2, clamp } from './util.js';
 
 export function newStore(name) {
   const st = {
-    v: 8, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
+    v: 10, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
     skills: { start: true, prod_food1: true }, prices: {}, market: {}, marketPrev: {}, staff: [], nid: 100, phase: 'prep', time: OPEN_TIME,
     totalSales: 0, totalCustomers: 0, rev: 1, created: Date.now(), color: '#ff6b35',
     today: { sales: 0, served: 0, lost: 0, orders: 0, ship: 0, xp: 0, vend: 0, recycle: 0 },
     bays: Object.fromEntries(START_BAYS.map((b) => [b, 1])),
     stock: Object.fromEntries(START_STOCK.map((b) => [b, 1])),
     fixtures: initialFixtures(),
-    boxes: [],
+    boxes: [], reviews: [],
   };
   // 最初は棚も倉庫も空っぽ。マネージャーボードで発注して補充するところから
   return st;
 }
 function initialFixtures() {
   return [
-    { id: 1, t: 'mboard', x: -2.5, z: -27.12, r: 0 },
-    { id: 2, t: 'fboard', x: -4.62, z: -24.75, r: 1 },
-    { id: 3, t: 'xboard', x: -0.38, z: -24.75, r: 3 },
-    { id: 4, t: 'recycle', x: 8, z: -23.3, r: 2 },
+    { id: 1, t: 'mboard', x: -2.5, z: -35.12, r: 0 },
+    { id: 2, t: 'fboard', x: -4.62, z: -32.75, r: 1 },
+    { id: 3, t: 'xboard', x: -0.38, z: -32.75, r: 3 },
+    { id: 4, t: 'recycle', x: 8, z: -31.3, r: 2 },
     { id: 5, t: 'checkout', x: 3, z: 3.25, r: 2 },
     { id: 6, t: 'shelf', x: -3, z: -3.5, r: 0, s: emptySlots('shelf') },
     { id: 7, t: 'shelf', x: -3, z: -0.75, r: 0, s: emptySlots('shelf') },
@@ -36,7 +37,7 @@ function initialFixtures() {
     { id: 10, t: 'plant', x: -4.5, z: 5.5, r: 0 },
     { id: 11, t: 'trash', x: 4.5, z: 5.5, r: 0 },
     { id: 12, t: 'opensign', x: 2.25, z: 5.25, r: 0 },
-    { id: 13, t: 'dumpster', x: -0.9, z: -21.43, r: 0 },
+    { id: 13, t: 'dumpster', x: -0.9, z: -29.43, r: 0 },
   ];
 }
 // 旧レイアウト(v1)のセーブを新しい店舗に引っ越す：設備代は全額返金、棚の商品は箱に戻す
@@ -52,7 +53,7 @@ function migrateV1(st) {
   if (st.skills?.exp1) { delete st.skills.exp1; st.sp = (st.sp || 0) + 3; }
   if (st.skills?.exp2) { delete st.skills.exp2; st.sp = (st.sp || 0) + 4; }
   st.nid = Math.max(st.nid || 100, 200);
-  st.fixtures = initialFixtures().map((f) => (f.z < BACK_Z ? { ...f, z: f.z - (BACK_Z - OLD_BACK_Z) } : f)); // v8 で奥へずらすので旧座標で置く
+  st.fixtures = initialFixtures(); st._fresh = true; // 最新の配置で作り直したので、後の引っ越し（v8・v9）でずらさない
   st.bays = { b20: 1, b21: 1, b30: 1, b31: 1 }; // v2〜v5 の番号（v6 で付け替える）
   st.stock = Object.fromEntries(START_STOCK.map((b) => [b, 1]));
   st.boxes = [];
@@ -148,12 +149,32 @@ export function normalizeStore(st) {
     // v8：売り場を奥にも広げられるように（奥行き最大20m）。倉庫・マネージャー室を10m奥へ引っ越し、
     // 倉庫へつながる真ん中の奥の売り場（4区画）をプレゼント
     const dz = BACK_Z - OLD_BACK_Z;
-    for (const f of st.fixtures || []) if (f.z < OLD_BACK_Z) f.z += dz;
+    if (!st._fresh) for (const f of st.fixtures || []) if (f.z < OLD_BACK_Z) f.z += dz;
     for (const b of st.boxes || []) if (b.loc?.t === 'f' && b.loc.z < OLD_BACK_Z && b.loc.z > -40) b.loc.z += dz;
     st.bays ||= {};
     for (const id of START_BAYS) st.bays[id] = 1;
     st.v = 8;
   }
+  if (st.v < 9) {
+    // v9：倉庫も奥に広げられるように（手前8m＋奥8m）。マネージャー室・搬入口・奥の壁ぎわの物を8m奥へ引っ越し、
+    // 真ん中の奥の倉庫をプレゼント（マネージャー室と搬入口につながる）
+    const dz = STOCK_Z - OLD_STOCK_Z, cut = OLD_STOCK_Z + 1;
+    if (!st._fresh) for (const f of st.fixtures || []) if (f.z < cut) f.z += dz;
+    for (const b of st.boxes || []) if (b.loc?.t === 'f' && b.loc.z < cut && b.loc.z > -60) b.loc.z += dz;
+    st.stock ||= {};
+    for (const id of START_STOCK) st.stock[id] = 1;
+    st.v = 9;
+  }
+  if (st.v < 10) {
+    // v10：レベル上限30・レベルアップのSPが増えた。今のレベルまでに増えるはずだった分のSPをまとめてプレゼント
+    const lv = Math.min(MAX_LEVEL, st.level || 1);
+    st.sp = (st.sp || 0) + Math.max(0, spTotalNew(lv) - spTotalOld(lv));
+    if ((st.level || 1) > MAX_LEVEL) { st.level = MAX_LEVEL; st.xp = 0; }
+    st.v = 10;
+  }
+  delete st._fresh;
+  st.reviews ||= [];
+  if (st.level >= MAX_LEVEL) st.xp = 0;
   st.market ||= {}; st.marketPrev ||= {};
   st.bays ||= Object.fromEntries(START_BAYS.map((b) => [b, 1])); st.stock ||= { st0: 1 };
   st.skills ||= { start: true }; st.prices ||= {}; st.staff ||= []; st.boxes ||= []; st.fixtures ||= [];
@@ -313,7 +334,7 @@ export class Sim {
     this.bump();
   }
   a_order(uid, a) {
-    const items = (a.items || []).filter(([p, n]) => PRODUCTS[p] && n > 0 && productUnlocked(p, this.store.skills)).map(([p, n]) => [p, Math.min(ORDER_MAX_BOXES, n | 0)]);
+    const items = (a.items || []).filter(([p, n]) => PRODUCTS[p] && n > 0 && productUnlocked(p, this.store.skills)).map(([p, n, half]) => [p, Math.min(ORDER_MAX_BOXES, n | 0), half ? 1 : 0]);
     if (!items.length) return;
     const boxes = items.reduce((t, [, n]) => t + n, 0);
     if (boxes > ORDER_MAX_BOXES) return this.err(uid, `1回の配達は最大${ORDER_MAX_BOXES}箱までです`);
@@ -441,7 +462,8 @@ export class Sim {
     if (st.sp < sk.cost) return this.err(uid, 'スキルポイントが足りません');
     st.sp -= sk.cost; st.skills[sk.id] = true;
     if (sk.id === 'exp1' || sk.id === 'exp2') this.nav.build(st);
-    this.toast(null, `スキル「${sk.name}」を解放！`, 'ok');
+    const who = this.room ? this.players[uid]?.name : null;
+    this.toast(null, `🌟 ${who ? who + 'さんが' : ''}スキル「${sk.name}」を解放！（のこりSP ${st.sp}）`, 'ok');
     this.sfx('levelup'); this.bump();
   }
   a_hire(uid, a) {
@@ -557,7 +579,7 @@ export class Sim {
     if (def.cat === 'checkout' && t === 'checkout' && ignoreId == null) {
       if (this.store.fixtures.filter((f) => f.t === 'checkout').length >= checkoutLimit(st.skills)) return 'レジはこれ以上置けません（スキルで増設）';
     }
-    if (t === 'selfcheckout' && ignoreId == null && this.store.fixtures.filter((f) => f.t === 'selfcheckout').length >= 4) return 'セルフレジは4台までです';
+    if (t === 'selfcheckout' && ignoreId == null && this.store.fixtures.filter((f) => f.t === 'selfcheckout').length >= SELF_MAX) return `セルフレジは${SELF_MAX}台までです`;
     return true;
   }
 
@@ -588,10 +610,11 @@ export class Sim {
 
   deliver(items) {
     let k = this.store.boxes.filter((b) => b.loc.t === 'f' && inArea(b.loc, DELIVERY_AREA)).length;
-    for (const [p, n] of items) for (let i = 0; i < n; i++) {
+    for (const [p, n, half] of items) for (let i = 0; i < n; i++) {
+      if (!PRODUCTS[p]) continue;
       const loc = deliverySpot(this.store, k++);
       loc.y = this.stackHeight(loc.x, loc.z, null);
-      this.store.boxes.push({ id: this.store.nid++, p, n: PRODUCTS[p].qty, loc, o: false, drop: 1 });
+      this.store.boxes.push({ id: this.store.nid++, p, n: boxUnits(p, half), loc, o: false, drop: 1 });
     }
     this.toast(null, '📦 店の前に段ボールが届きました！倉庫に運ぶか、そのまま補充しよう', 'ok');
     this.dyn.dropT = 6;
@@ -604,11 +627,11 @@ export class Sim {
     if (dyn.spawnT > 0) return;
     const t = st.time;
     const curve = 0.65 + 0.55 * Math.exp(-(((t - 720) / 100) ** 2)) + 0.7 * Math.exp(-(((t - 1080) / 110) ** 2));
-    const ads = (st.skills.mk_ads ? 1.25 : 1) * (st.skills.mk_ads2 ? 1.5 : 1);
-    const mult = curve * ads * (0.5 + st.rep / 100) * (1 + 0.09 * (st.level - 1));
+    const f = customerFactors(st);
+    const mult = curve * f.ads * f.rep * f.lv * f.size;
     dyn.spawnT = (15 / mult) * rand(0.6, 1.4);
-    const nReg = st.fixtures.filter((f) => FIXTURES[f.t].cat === 'checkout').length;
-    const maxC = Math.min(24, 4 + Math.floor(st.level * 1.2) + nReg * 2);
+    const nReg = st.fixtures.filter((x) => FIXTURES[x.t].cat === 'checkout').length;
+    const maxC = Math.min(this.custCap || 36, 4 + st.level + nReg * 2 + Math.floor(Object.keys(st.bays || {}).length / 4));
     if (dyn.customers.length >= maxC) return;
     this.spawnCustomer();
   }
@@ -630,6 +653,7 @@ export class Sim {
     const c = {
       id: this.dyn.cid++, av: randi(1, 2 ** 30), x: sx, z: sz, ry: 0, st: 'enter', path: null, pi: 0,
       list, li: 0, basket: [], t: 0, pat: rand(80, 130), bub: null, bt: 0, reg: null, an: 'walk', spd: rand(1.25, 1.6), mood: 0,
+      miss: [], pricey: [], cheap: [], qT: 0, noSelf: Math.random() < 0.35, // 3人に1人くらいはセルフレジを使いたがらない
     };
     this.dyn.customers.push(c);
     for (const f of st.fixtures) if (f.t === 'vending' && Math.random() < 0.18) { st.money += 160; st.today.vend += 160; }
@@ -640,9 +664,41 @@ export class Sim {
     return !!e.path;
   }
   bubble(c, k) { c.bub = k; c.bt = BUBBLE_T; }
-  repDelta(d) {
-    const st = this.store, sk = st.skills.mk_rep;
-    st.rep = clamp(st.rep + (d > 0 ? d * (sk ? 1.5 : 1) : d * (sk ? 0.5 : 1)), 0, 100);
+  // ---------- 評判（口コミ） ----------
+  // お客さんが帰るときに★1〜5で評価。評判（0〜100）はみんなの評価の移動平均
+  review(c, angry) {
+    if (c.rv) return; c.rv = 1;
+    const st = this.store;
+    const why = [];
+    let s = 4.1;
+    if (angry) { s = 1; why.push(c.why || 'angry'); }
+    else {
+      for (const p of c.miss) { s -= 0.85; why.push(['miss', p]); }
+      for (const p of c.pricey) { s -= 0.7; why.push(['pricey', p]); }
+      if (!c.basket.length) s -= 0.5;
+      if (c.paid) {
+        if (c.qT > 75) { s -= 1.1; why.push('waitL'); } else if (c.qT > 40) { s -= 0.5; why.push('wait'); } else if (c.qT < 14) { s += 0.3; why.push('fast'); }
+      }
+      if (c.cheap.length) { s += 0.4; why.push(['cheap', c.cheap[0]]); }
+      const kinds = new Set(); for (const f of st.fixtures) if (f.s) for (const x of f.s) if (x[0] && x[1] > 0) kinds.add(x[0]);
+      if (kinds.size >= 25) { s += 0.3; why.push('variety'); } else if (kinds.size <= 4) { s -= 0.3; why.push('few'); }
+      const mess = st.boxes.filter((b) => b.loc.t === 'f' && b.n === 0 && b.loc.z > -14 && b.loc.z < 6).length;
+      if (mess >= 3) { s -= 0.4; why.push('mess'); }
+      if (st.skills.mk_rep) s += 0.3;
+      s += Math.min(0.3, st.fixtures.filter((f) => FIXTURES[f.t]?.cat === 'deco').length * 0.04);
+    }
+    s = clamp(s, 1, 5);
+    const stars = Math.round(s);
+    const k = st.skills.mk_rep && s < 3 ? 0.025 : 0.04;
+    st.rep = clamp(st.rep + ((s - 1) * 25 - st.rep) * k, 0, 100);
+    const rv = (st.today.rv ||= [0, 0, 0, 0, 0]); rv[stars - 1]++;
+    // 口コミは何人かに1人が書く（悪いときほど書きたくなる）
+    if (Math.random() < (stars <= 2 ? 0.75 : stars >= 5 ? 0.5 : 0.3)) {
+      const m = reviewText(stars, why, s);
+      const r = { d: st.day, t: Math.round(st.time), s: stars, m, av: c.av };
+      st.reviews = [r, ...(st.reviews || [])].slice(0, 40);
+      this.ev({ t: 'review', r });
+    }
   }
   nextShop(c) {
     const st = this.store;
@@ -661,7 +717,7 @@ export class Sim {
         });
       }
       const tgt = best || anyAssigned;
-      if (!tgt) { c.li++; c.mood -= 1; this.bubble(c, 'none'); this.repDelta(-0.3); continue; }
+      if (!tgt) { c.li++; c.mood -= 1; this.bubble(c, 'none'); if (c.miss.length < 3) c.miss.push(want.p); continue; }
       c.tgt = { fid: tgt.f.id, si: tgt.si };
       c.st = 'go'; c.an = 'walk';
       if (!this.goto(c, tgt.ax, tgt.az)) { c.li++; continue; }
@@ -672,12 +728,13 @@ export class Sim {
   toCheckout(c) {
     const st = this.store;
     if (!c.basket.length) return this.leave(c);
-    const regs = st.fixtures.filter((f) => FIXTURES[f.t].cat === 'checkout');
-    if (!regs.length) { this.bubble(c, 'angry'); this.lose(c); return this.leave(c); }
+    let regs = st.fixtures.filter((f) => FIXTURES[f.t].cat === 'checkout');
+    if (c.noSelf) regs = regs.filter((f) => f.t !== 'selfcheckout');
+    if (!regs.length) { c.why = c.noSelf && st.fixtures.some((f) => f.t === 'selfcheckout') ? 'selfonly' : 'noreg'; return this.leave(c, true); }
     let best = null, bs = 1e9;
     for (const f of regs) {
-      const r = this.reg(f.id);
-      const score = r.q.length * 10 + (r.op ? 0 : 4) + dist(c.x, c.z, f.x, f.z) * 0.3;
+      const r = this.reg(f.id), self = f.t === 'selfcheckout';
+      const score = r.q.length * (self ? 14 : 10) + (self ? 3 + c.basket.length * 1.2 : r.op ? 0 : 4) + dist(c.x, c.z, f.x, f.z) * 0.3;
       if (score < bs) { bs = score; best = f; }
     }
     const r = this.reg(best.id);
@@ -698,11 +755,11 @@ export class Sim {
   lose(c) {
     const st = this.store;
     st.today.lost++;
-    this.repDelta(-2);
   }
   leave(c, angry) {
     if (c.reg) { const r = this.dyn.regs[c.reg]; if (r) { r.q = r.q.filter((id) => id !== c.id); if (r.cust === c.id) this.resetReg(c.reg); } c.reg = null; }
     if (angry) { this.bubble(c, 'angry'); this.lose(c); }
+    if (c.st !== 'out') this.review(c, angry);
     c.st = 'out'; c.an = 'walk';
     const [sx, sz] = pick(SPAWN_POINTS);
     if (!this.goto(c, sx, sz)) c.gone = true;
@@ -729,12 +786,12 @@ export class Sim {
         const f = this.fx(c.tgt.fid), want = c.list[c.li];
         const s = f?.s?.[c.tgt.si];
         if (!s || s[0] !== want.p || s[1] <= 0) {
-          if (!c.took) { this.bubble(c, 'empty'); c.mood -= 1; this.repDelta(-0.4); }
+          if (!c.took) { this.bubble(c, 'empty'); c.mood -= 1; if (c.miss.length < 3) c.miss.push(want.p); }
           c.li++; return this.nextShop(c);
         }
         if (!c.took) {
-          if (getPrice(st, want.p) > priceLimit(st, want.p)) { this.bubble(c, 'pricey'); c.mood -= 1; this.repDelta(-0.3); c.li++; return this.nextShop(c); }
-          if (getPrice(st, want.p) <= marketPrice(st, want.p) * 0.85) this.bubble(c, 'cheap');
+          if (getPrice(st, want.p) > priceLimit(st, want.p)) { this.bubble(c, 'pricey'); c.mood -= 1; if (c.pricey.length < 3) c.pricey.push(want.p); c.li++; return this.nextShop(c); }
+          if (getPrice(st, want.p) <= marketPrice(st, want.p) * 0.85) { this.bubble(c, 'cheap'); c.cheap.push(want.p); }
         }
         s[1]--; c.took++;
         c.hold = want.p; c.holdT = 0.45; // 手に取った商品をしばらく手に持つ → かごへ
@@ -749,8 +806,9 @@ export class Sim {
         if (c.st !== 'q') break;
         const arrived = stepPath(c, dt, c.spd);
         c.an = arrived ? 'idle' : 'walk';
+        c.qT += dt;
         c.pat -= dt * (c.qi > 0 ? 0.8 : 1);
-        if (c.pat <= 0) return this.leave(c, true);
+        if (c.pat <= 0) { c.why = 'waitAngry'; return this.leave(c, true); }
         if (c.pat < 25 && !c.bub) this.bubble(c, 'wait');
         const r = this.dyn.regs[c.reg];
         if (arrived && c.qi === 0 && r && r.ph === 'idle') {
@@ -761,14 +819,15 @@ export class Sim {
           r.belt = c.basket.map((b) => ({ p: b.p, price: b.price, s: 0 }));
           r.ph = 'scan'; r.cust = c.id; r.t = 0;
           c.st = 'pay'; c.an = 'idle';
-          if (f.t === 'selfcheckout') r.op = 'self';
+          if (f.t === 'selfcheckout') { r.op = 'self'; r.t = -2.2; } // セルフレジは使い方に迷う時間がある
           this.dynRev++;
         }
         break;
       }
       case 'pay': {
+        c.qT += dt;
         c.pat -= dt * 0.6;
-        if (c.pat <= 0) return this.leave(c, true);
+        if (c.pat <= 0) { c.why = 'waitAngry'; return this.leave(c, true); }
         if (c.pat < 20 && !c.bub) this.bubble(c, 'wait');
         break;
       }
@@ -786,13 +845,16 @@ export class Sim {
     st.money += total; st.today.sales += total; st.totalSales += total; st.today.served++; st.totalCustomers++;
     const items = (st.today.items ||= {});
     for (const b of r.belt) { const e = (items[b.p] ||= [0, 0]); e[0]++; e[1] += b.price; }
-    const gx = Math.ceil(total / 25); st.xp += gx; st.today.xp += gx;
-    this.repDelta(0.6 + (c && c.mood >= 0 ? 0.3 : 0) + st.fixtures.filter((f) => f.t === 'gumball').length * 0.05);
-    while (st.xp >= xpNeed(st.level) && st.level < 99) {
-      st.xp -= xpNeed(st.level); st.level++; st.sp += st.level % 5 === 0 ? 2 : 1;
+    const gx = Math.ceil(total / 25); st.today.xp += gx;
+    if (st.level < MAX_LEVEL) st.xp += gx;
+    while (st.level < MAX_LEVEL && st.xp >= xpNeed(st.level)) {
+      st.xp -= xpNeed(st.level); st.level++;
+      const gain = spForLevel(st.level); st.sp += gain;
+      if (st.level >= MAX_LEVEL) st.xp = 0;
       const newProd = Object.values(SKILLS).filter((k) => k.lv === st.level && !st.skills[k.id]).map((k) => k.name);
-      this.ev({ t: 'levelup', level: st.level, prods: newProd }); this.sfx('levelup');
+      this.ev({ t: 'levelup', level: st.level, sp: gain, max: st.level >= MAX_LEVEL, prods: newProd }); this.sfx('levelup');
     }
+    if (c) c.paid = true;
     const f = this.fx(fid);
     this.sfx('cash', f?.x, f?.z);
     this.ev({ t: 'sale', total, who });
@@ -821,7 +883,8 @@ export class Sim {
     if (!auto) return;
     const self = r.op === 'self';
     const opRt = !self ? this.dyn.staffRt[String(r.op).slice(2)] : null;
-    const spd = self ? 0.75 : (opRt?.k || 1) * (this.hasSkill('mk_scan') ? 1.5 : 1);
+    // セルフレジはお客さんが自分でスキャンするのでかなり遅い（1点 約2.6秒＋支払い 約3.5秒）
+    const spd = self ? 0.46 : (opRt?.k || 1) * (this.hasSkill('mk_scan') ? 1.5 : 1);
     r.t = (r.t || 0) + dt * spd;
     if (r.ph === 'scan' && r.t >= (self ? 1.2 : 0.75)) {
       r.t = 0;
@@ -1075,7 +1138,7 @@ export class Sim {
     const bills = 500 + st.fixtures.length * 60;
     st.money -= wages + bills;
     const top = Object.entries(st.today.items || {}).sort((a, b) => b[1][1] - a[1][1]).slice(0, 6);
-    const data = { top, prevProfit: st.last?.profit ?? null, day: st.day, recycle: st.today.recycle || 0, sales: st.today.sales, served: st.today.served, lost: st.today.lost, orders: st.today.orders, ship: st.today.ship || 0, wages, bills, vend: st.today.vend, xp: st.today.xp, level: st.level, rep: Math.round(st.rep), money: st.money };
+    const data = { top, prevProfit: st.last?.profit ?? null, day: st.day, recycle: st.today.recycle || 0, sales: st.today.sales, served: st.today.served, lost: st.today.lost, orders: st.today.orders, ship: st.today.ship || 0, wages, bills, vend: st.today.vend, xp: st.today.xp, level: st.level, rep: Math.round(st.rep), repPrev: st.last?.rep ?? null, rv: st.today.rv || [0, 0, 0, 0, 0], money: st.money };
     data.profit = data.sales + data.vend + data.recycle - data.orders - data.ship - wages - bills;
     st.phase = 'summary'; st.last = data;
     for (const fid in this.dyn.regs) this.resetReg(+fid, true);
@@ -1124,8 +1187,44 @@ export function cashGiven(total) {
   return g;
 }
 // 送料こみの支払い額
+// 来店の勢い：レベル・売り場の広さ・評判・広告。ゲーム画面の評判タブにも出す
+export function customerFactors(st) {
+  const bays = Math.max(1, Object.keys(st.bays || {}).length);
+  return {
+    lv: 1 + 0.06 * ((st.level || 1) - 1),           // Lv30 で約2.7倍
+    size: Math.pow(bays / START_BAYS.length, 0.75),  // 売り場40区画で約2.5倍
+    rep: 0.5 + (st.rep ?? 50) / 100,                 // 評判0で0.5倍〜100で1.5倍
+    ads: (st.skills?.mk_ads ? 1.25 : 1) * (st.skills?.mk_ads2 ? 1.5 : 1),
+  };
+}
+export const repStars = (rep) => 1 + clamp(rep ?? 50, 0, 100) / 25; // 評判0〜100 → ★1.0〜5.0
+const RV = {
+  miss: (n) => pick([`${n}が売り切れてた…`, `${n}を買いに来たのになかった`, `${n}を置いてほしい`]),
+  pricey: (n) => pick([`${n}が高すぎる！`, `${n}はほかの店のほうが安い`, `${n}の値段にびっくり`]),
+  cheap: (n) => pick([`${n}が安くて助かる！`, `${n}がお買い得だった`]),
+  waitL: () => pick(['レジでずっと待たされた…', 'レジが全然進まない', 'レジの人を増やしてほしい']),
+  wait: () => pick(['レジでけっこう待った', 'レジがもう少し早いといいな']),
+  fast: () => pick(['レジが早くて気持ちいい', 'サクッと買えた！']),
+  variety: () => pick(['品揃えがよくて楽しい！', 'なんでもそろってて便利']),
+  few: () => pick(['棚がスカスカ…', '商品が少なすぎる']),
+  mess: () => pick(['通路に段ボールが置きっぱなし', 'お店が散らかってた']),
+  waitAngry: () => pick(['待たされすぎ！もう来ない', 'レジが遅すぎて帰った']),
+  selfonly: () => pick(['セルフレジしかなくて困った…', 'セルフレジの使い方がわからない']),
+  noreg: () => 'レジがなくて買えなかった',
+  angry: () => 'もう来ない！',
+  5: () => pick(['また来ます！', '最高のスーパー！', '近所にあってうれしい']), 4: () => pick(['いいお店でした', '感じのいいお店']),
+  3: () => pick(['ふつうかな', 'まあまあ']), 2: () => pick(['うーん…', 'ちょっと残念']), 1: () => 'もう来ない',
+};
+function reviewText(stars, why, s) {
+  const bad = why.filter((w) => ['miss', 'pricey', 'waitL', 'wait', 'few', 'mess', 'waitAngry', 'selfonly', 'noreg', 'angry'].includes(Array.isArray(w) ? w[0] : w));
+  const good = why.filter((w) => ['cheap', 'fast', 'variety'].includes(Array.isArray(w) ? w[0] : w));
+  const w = stars <= 3 ? bad[0] || null : (Math.random() < 0.6 && good.length ? pick(good) : null);
+  if (!w) return RV[stars]();
+  const [k, p] = Array.isArray(w) ? w : [w];
+  return RV[k](PRODUCTS[p]?.name || '');
+}
 export function orderTotal(store, items) { return items.length ? orderCost(store, items) + SHIPPING_FEE : 0; }
 export function orderCost(store, items) {
   const m = costMult(store.skills);
-  return Math.round(items.reduce((s, [p, n]) => s + marketCost(store, p) * PRODUCTS[p].qty * n, 0) * m);
+  return Math.round(items.reduce((s, [p, n, half]) => s + marketCost(store, p) * boxUnits(p, half) * n, 0) * m);
 }

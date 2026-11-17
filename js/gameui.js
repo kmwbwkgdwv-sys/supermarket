@@ -1,8 +1,8 @@
 // ===== ゲーム中のUI（HUD・発注PC・スキルボード・レジ・建築・チャット） =====
 import { h, $, modal, toast, confirmBox, promptBox } from './ui.js';
 import { PRODUCTS, PRODUCTS_LIST, CATEGORIES, FIXTURES, FIXTURE_CATS, SKILLS, SKILLS_LIST, STAFF_ROLES, STAFF_NAMES,
-  productUnlocked, fixtureUnlocked, staffLimit, STAFF_SLOTS, STAFF_MAX, slotWage, xpNeed, closeTime, CHAT_PRESETS, SALES, STOCK_SECTIONS, STOCK_ORDER, expandTargets, marketPrice, marketCost, SKILL_BRANCHES, ROOT_POS, ORDER_MAX_BOXES, SHIPPING_FEE } from './data.js';
-import { getPrice, orderCost, orderTotal, priceLimit } from './sim.js';
+  productUnlocked, fixtureUnlocked, staffLimit, STAFF_SLOTS, STAFF_MAX, slotWage, xpNeed, closeTime, CHAT_PRESETS, SALES, STOCK_COLS, STOCK_ROWS, stockAt, expandTargets, marketPrice, marketCost, SKILL_BRANCHES, ROOT_POS, ORDER_MAX_BOXES, SHIPPING_FEE, MAX_LEVEL, halfQty } from './data.js';
+import { getPrice, orderCost, orderTotal, priceLimit, customerFactors, repStars } from './sim.js';
 import { yen, fmtTime, mulberry32, escapeText } from './util.js';
 
 const PHASE = { prep: '準備中', open: '営業中', closing: '閉店準備', summary: '本日の結果' };
@@ -34,6 +34,8 @@ export class GameUI {
     this.g = game;
     this.openBtn.onclick = () => { const ph = game.store.phase; toast(ph === 'prep' ? '🪧 入口の看板をOPENにすると営業スタート！' : ph === 'open' ? '🪧 店じまいするときは入口の看板をCLOSEDに' : '⏳ 残りのお客さんの会計をしよう'); };
     this.lv.onclick = () => this.openSkills();
+    this.rep.onclick = () => this.openPC('rep');
+    this.rep.style.cursor = 'pointer';
   }
   updateHUD(dt, store, dyn, force) {
     this._hudT -= dt;
@@ -47,11 +49,12 @@ export class GameUI {
     this.openBtn.classList.toggle('isopen', ph === 'open');
     this.openBtn.classList.toggle('pulse', ph === 'prep');
     this.money.textContent = '💴 ' + yen(store.money);
-    this.lvText.textContent = 'Lv.' + store.level;
-    this.lvBar.style.width = Math.min(100, store.xp / xpNeed(store.level) * 100) + '%';
+    const maxed = store.level >= MAX_LEVEL;
+    this.lvText.textContent = 'Lv.' + store.level + (maxed ? ' MAX' : '');
+    this.lvBar.style.width = (maxed ? 100 : Math.min(100, store.xp / xpNeed(store.level) * 100)) + '%';
     this.sp.textContent = store.sp > 0 ? `SP ${store.sp}` : '';
     this.sp.classList.toggle('glow', store.sp > 0);
-    this.rep.textContent = '⭐ ' + Math.round(store.rep);
+    this.rep.textContent = '⭐ ' + repStars(store.rep).toFixed(1);
     const n = dyn?.dl || 0;
     this.deliv.classList.toggle('hidden', !n); this.deliv.textContent = `🚚 配送中 ×${n}`;
   }
@@ -72,7 +75,8 @@ export class GameUI {
     let cat = 'food';
     const body = h('div', { class: 'pc-body' });
     const tabs = h('div', { class: 'tabs' });
-    const TABS = [['order', '📦 発注'], ['price', '🏷 値段'], ['staff', '🧑‍💼 従業員'], ['skill', '🌟 スキル'], ['store', '🏪 お店']];
+    const TABS = [['order', '📦 発注'], ['staff', '🧑‍💼 従業員'], ['rep', '💬 評判'], ['skill', '🌟 スキル'], ['store', '🏪 お店']];
+    if (tab === 'price') tab = 'order';
     const total = h('b'); const orderBtn = h('button', { class: 'btn' }, '注文する');
     const draw = () => {
       const st = g.store;
@@ -88,32 +92,37 @@ export class GameUI {
         for (const [k, c] of Object.entries(CATEGORIES)) ctabs.append(h('button', { class: 'tab' + (k === cat ? ' on' : ''), onclick: () => { cat = k; draw(); } }, c.icon + ' ' + c.name));
         const grid = h('div', { class: 'pgrid' });
         const inCart = [...cart.values()].reduce((t, n) => t + n, 0), full = inCart >= ORDER_MAX_BOXES;
+        const qtyRow = (key, label, price) => {
+          const n = cart.get(key) || 0;
+          return h('div', { class: 'qty' + (key.endsWith('|h') ? ' half' : '') }, h('span', { class: 'ql' }, label, h('small', {}, yen(price))),
+            h('button', { onclick: () => { cart.set(key, Math.max(0, n - 1)); draw(); } }, '−'), h('b', {}, n),
+            h('button', { class: full ? 'dim' : '', onclick: () => { if (full) { toast(`カートは最大${ORDER_MAX_BOXES}箱までです`, 'warn'); return; } cart.set(key, n + 1); draw(); } }, '＋'));
+        };
         const sm = stockMap(st);
         for (const p of PRODUCTS_LIST.filter((x) => x.cat === cat)) {
           const ok = productUnlocked(p.id, st.skills);
-          const n = cart.get(p.id) || 0;
-          const boxCost = Math.round(marketCost(st, p.id) * p.qty * (st.skills.mk_bulk ? 0.9 : 1));
+          const unitCost = marketCost(st, p.id) * (st.skills.mk_bulk ? 0.9 : 1);
+          const boxCost = Math.round(unitCost * p.qty), halfCost = Math.round(unitCost * halfQty(p.id));
           const card = h('div', { class: 'pcard2' + (ok ? '' : ' locked') },
             h('div', { class: 'pe' }, p.icon),
             h('div', { class: 'pn' }, p.name),
             p.place.length === 1 && p.place[0] === 'chilled' ? h('div', { class: 'pbadge cold' }, '🧊 冷蔵ケース専用') : p.place.length === 1 && p.place[0] === 'frozen' ? h('div', { class: 'pbadge frozen' }, '❄️ 冷凍ケース専用') : null,
-            h('div', { class: 'pm' }, `${p.qty}個入 ${yen(boxCost)}`),
+            h('div', { class: 'pm' }, `📦 1箱${p.qty}個（半分は${halfQty(p.id)}個）`),
             h('div', { class: 'pm' }, `仕入 ${yen(marketCost(st, p.id))} / 相場 ${yen(marketPrice(st, p.id))} `, trend(st, p.id)),
             ok ? stockLine(sm, p.id) : null,
-            ok ? h('div', { class: 'qty' },
-              h('button', { onclick: () => { cart.set(p.id, Math.max(0, n - 1)); draw(); } }, '−'), h('b', {}, n),
-              h('button', { class: full ? 'dim' : '', onclick: () => { if (full) { toast(`カートは最大${ORDER_MAX_BOXES}箱までです`, 'warn'); return; } cart.set(p.id, n + 1); draw(); } }, '＋'))
+            ok ? h('div', { class: 'qtys' }, qtyRow(p.id, '1箱', boxCost), qtyRow(p.id + '|h', '半分', halfCost))
               : h('div', { class: 'lock' }, '🔒 スキル「' + (SKILLS[p.lic]?.name || '') + '」'));
           grid.append(card);
         }
-        const items = [...cart.entries()].filter(([, n]) => n > 0);
+        // カートのキー：商品ID（1箱）／商品ID|h（半分の箱）→ 注文は [商品, 箱数, ハーフ]
+        const items = [...cart.entries()].filter(([, n]) => n > 0).map(([k, n]) => [k.split('|')[0], n, k.endsWith('|h') ? 1 : 0]);
         const goods = orderCost(st, items), cost = orderTotal(st, items);
         total.textContent = yen(cost);
         orderBtn.disabled = !items.length || cost > st.money;
         orderBtn.textContent = items.length ? `🚚 注文する（${inCart}箱）` : '注文する';
         orderBtn.onclick = () => { g.act({ t: 'order', items }); cart.clear(); draw(); };
         // カートの中身（タップで1箱へらす）
-        const chips = h('div', { class: 'cart-chips' }, items.length ? items.map(([pid, k]) => h('button', { class: 'cchip', onclick: () => { cart.set(pid, k - 1); draw(); } }, `${PRODUCTS[pid].icon}×${k}`)) : h('span', { class: 'muted small' }, '＋でカートに入れてね'));
+        const chips = h('div', { class: 'cart-chips' }, items.length ? items.map(([pid, k, half]) => h('button', { class: 'cchip', onclick: () => { const key = pid + (half ? '|h' : ''); cart.set(key, k - 1); draw(); } }, `${PRODUCTS[pid].icon}${half ? '½' : ''}×${k}`)) : h('span', { class: 'muted small' }, '＋でカートに入れてね'));
         body.append(ctabs, grid, h('div', { class: 'cartbar' },
           h('div', { class: 'cart-l' },
             h('div', { class: 'cart-h' }, h('b', { class: 'cart-n' + (full ? ' full' : '') }, `🛒 ${inCart}/${ORDER_MAX_BOXES}箱`), items.length ? h('button', { class: 'cclear', onclick: () => { cart.clear(); draw(); } }, 'からにする') : null),
@@ -122,15 +131,8 @@ export class GameUI {
             h('div', { class: 'cart-sum' }, items.length ? `商品 ${yen(goods)} ＋ 送料 ${yen(SHIPPING_FEE)}` : `送料 ${yen(SHIPPING_FEE)}／回（最大${ORDER_MAX_BOXES}箱）`),
             h('div', {}, '合計', h('span', { class: 'muted small' }, '（送料込み）'), total, h('span', { class: 'muted small' }, ` ／ 所持金 ${yen(st.money)}`)),
             orderBtn)));
-      } else if (tab === 'price') {
-        const list = h('div', { class: 'plist' });
-        const stocked = new Set(); for (const f of st.fixtures) (f.s || []).forEach((s) => s[0] && stocked.add(s[0]));
-        const sm = stockMap(st);
-        for (const p of PRODUCTS_LIST.filter((x) => productUnlocked(x.id, st.skills))) list.append(priceRow(g, st, p, stocked.has(p.id), draw, false, sm));
-        body.append(h('p', { class: 'muted small' }, `相場は毎日変わります（▲▼は前日比）。🔄は相場に自動で合わせる設定。相場の+${st.skills.mk_price ? 30 : 20}%までなら必ず売れて、それより高いと売れません。`),
-          h('div', { class: 'row wrap' }, h('button', { class: 'btn small', onclick: () => { g.act({ t: 'priceAll', k: 1 }); setTimeout(draw, 150); } }, '🔄 全部相場どおり'),
-            h('button', { class: 'btn small ghost', onclick: () => { g.act({ t: 'priceAll', k: 1.1 }); setTimeout(draw, 150); } }, '全部 相場+10%'),
-            h('button', { class: 'btn small ghost', onclick: () => { g.act({ t: 'priceAll', k: 1.2 }); setTimeout(draw, 150); } }, '全部 相場+20%')), list);
+      } else if (tab === 'rep') {
+        body.append(repPanel(st));
       } else if (tab === 'staff') {
         // 従業員の枠 No.1〜10。スキルボードで枠を解放 → 好きな仕事を選んで雇う
         const lim = staffLimit(st.skills);
@@ -160,7 +162,7 @@ export class GameUI {
         }
       } else if (tab === 'store') {
         body.append(
-          h('div', { class: 'pc-stats' }, stat('総売上', yen(st.totalSales)), stat('来店客数', st.totalCustomers + '人'), stat('評判', Math.round(st.rep)), stat('営業時間', `8:00〜${fmtTime(closeTime(st.skills))}`)),
+          h('div', { class: 'pc-stats' }, stat('総売上', yen(st.totalSales)), stat('来店客数', st.totalCustomers + '人'), stat('評判', '⭐' + repStars(st.rep).toFixed(1)), stat('営業時間', `8:00〜${fmtTime(closeTime(st.skills))}`)),
           h('div', { class: 'row' },
             h('button', { class: 'btn', onclick: async () => { const v = await promptBox('お店の名前', st.name, { max: 16 }); if (v) g.act({ t: 'storeName', v }); setTimeout(draw, 150); } }, '✏️ 店名を変える'),
           ),
@@ -179,7 +181,7 @@ export class GameUI {
   openPrice(pid) {
     const g = this.g, p = PRODUCTS[pid];
     const draw = () => { m.body.innerHTML = ''; m.body.append(priceRow(g, g.store, p, true, draw, true, stockMap(g.store))); };
-    const m = modal(`🏷 ${p.icon} ${p.name}の値段`, [], { onClose: () => this.closed() });
+    const m = modal(`🏷 値札：${p.icon} ${p.name}`, [], { onClose: () => this.closed() });
     this.opened(m); draw();
   }
   async openText(fid) {
@@ -212,10 +214,13 @@ export class GameUI {
       };
       const grid = h('div', { class: 'xgrid' });
       grid.append(h('div', { class: 'xrow office' }, h('div', { class: 'xcell office' }, h('b', {}, 'マネージャー室'), h('span', {}, 'ボード類'))));
-      const stockRow = h('div', { class: 'xrow' });
-      stockRow.style.gridTemplateColumns = `repeat(${STOCK_ORDER.length}, 1fr)`;
-      for (const id of STOCK_ORDER) { const s = STOCK_SECTIONS.find((o) => o.id === id); stockRow.append(cell(s.id, s.name, 'stock')); }
-      grid.append(stockRow);
+      // 倉庫：上が奥。左右にも奥にも広げられる
+      for (let r = STOCK_ROWS - 1; r >= 0; r--) {
+        const stockRow = h('div', { class: 'xrow' });
+        stockRow.style.gridTemplateColumns = `repeat(${STOCK_COLS}, 1fr)`;
+        for (let c = 0; c < STOCK_COLS; c++) { const s = stockAt(c, r); stockRow.append(cell(s.id, s.name, 'stock')); }
+        grid.append(stockRow);
+      }
       // 売り場：上が奥（倉庫側）、下が入口側。左右にも奥にも広げられる
       for (let r = SALES.rows - 1; r >= 0; r--) {
         const row = h('div', { class: 'xrow' }); row.style.gridTemplateColumns = `repeat(${SALES.cols}, 1fr)`;
@@ -223,7 +228,7 @@ export class GameUI {
         grid.append(row);
       }
       grid.append(h('div', { class: 'xstreet' }, '🚶 歩道・入口 🚪'));
-      body.append(h('p', { class: 'muted small' }, `所持金 ${'¥' + st.money.toLocaleString()}　／　売り場は左右にも奥にも、倉庫は左右に、いま使っている区画のとなりから1区画ずつ広げられます（買うたびに値上がり）`), grid);
+      body.append(h('p', { class: 'muted small' }, `所持金 ${'¥' + st.money.toLocaleString()}　／　売り場も倉庫も、左右にも奥にも、いま使っている区画のとなりから1区画ずつ広げられます（買うたびに値上がり）`), grid);
     };
     const m = modal('🗺️ 店舗拡張ボード', body, { wide: true, onClose: () => this.closed() });
     this.opened(m); draw();
@@ -249,7 +254,7 @@ export class GameUI {
         const own = list.filter((s) => st.skills[s.id]).length, can = list.filter((s) => canOf(st, s) && st.sp >= s.cost).length;
         tabs.append(h('button', { class: 'tab' + (k === tab ? ' on' : ''), onclick: () => { tab = k; sel = null; draw(); } }, n, h('span', { class: 'tcount' }, ` ${own}/${list.length}`), can ? h('span', { class: 'tbadge' }, can) : null));
       }
-      tabs.append(h('span', { class: 'sp-chip', title: 'レベルアップでSPがもらえます' }, `⭐${st.sp}SP`, h('span', { class: 'muted small' }, ` Lv.${st.level}`)));
+      tabs.append(h('span', { class: 'sp-chip', title: 'レベルアップでSPがもらえます' }, `⭐${st.sp}SP`, h('span', { class: 'muted small' }, ` Lv.${st.level}${st.level >= MAX_LEVEL ? ' MAX' : ''}`), g.room ? h('span', { class: 'muted small' }, ' 👥みんなで共有') : null));
       const keepX = wrap.scrollLeft, keepY = wrap.scrollTop, sameTab = wrap.dataset.tab === tab;
       wrap.dataset.tab = tab;
       wrap.innerHTML = '';
@@ -336,7 +341,9 @@ export class GameUI {
       top.length ? h('div', { class: 'sum-top' }, top.map(([p, [n, rev]], i) => h('div', { class: 'sum-item' }, h('span', { class: 'rk' }, ['🥇', '🥈', '🥉'][i] || (i + 1) + '.'), h('span', { class: 'ic' }, PRODUCTS[p].icon),
         h('span', { class: 'nm' }, PRODUCTS[p].name), h('span', { class: 'muted small' }, `${n}個`), h('b', {}, yen(rev))))) : h('p', { class: 'muted small' }, '今日は何も売れませんでした…'),
       h('div', { class: 'sum-h' }, '📈 お店の様子'),
-      row('お会計したお客さん', d.served + '人'), row('怒って帰ったお客さん', d.lost + '人', d.lost ? 'minus' : ''), row('獲得経験値', d.xp + ' XP'), row('評判', '⭐ ' + d.rep), row('お店のレベル', 'Lv.' + d.level));
+      row('お会計したお客さん', d.served + '人'), row('怒って帰ったお客さん', d.lost + '人', d.lost ? 'minus' : ''), row('獲得経験値', d.xp + ' XP'), row('評判', `⭐ ${repStars(d.rep).toFixed(1)}` + (d.repPrev != null ? `（${d.rep >= d.repPrev ? '▲' : '▼'}${Math.abs(repStars(d.rep) - repStars(d.repPrev)).toFixed(1)}）` : ''), d.repPrev != null && d.rep < d.repPrev ? 'minus' : ''),
+      (() => { const rv = d.rv || [0, 0, 0, 0, 0], n = rv.reduce((a, b) => a + b, 0); return n ? row('今日の評価', `★${(rv.reduce((a, c, i) => a + c * (i + 1), 0) / n).toFixed(1)}（${n}人）`) : null; })(),
+      row('お店のレベル', 'Lv.' + d.level + (d.level >= MAX_LEVEL ? ' MAX' : '')));
     const body = [
       h('div', { class: 'sum-big' }, `${d.day}日目 おつかれさま！`),
       h('div', { class: 'sum-grid' }, left, right),
@@ -480,6 +487,28 @@ function trend(st, pid) {
   if (!prev || prev === now) return h('span', { class: 'trend flat' }, '→');
   const d = (now - prev) / prev * 100;
   return h('span', { class: 'trend ' + (d > 0 ? 'up' : 'down') }, `${d > 0 ? '▲' : '▼'}${Math.abs(d).toFixed(0)}%`);
+}
+// ---------- 評判（口コミ）パネル ----------
+function repPanel(st) {
+  const stars = repStars(st.rep), f = customerFactors(st);
+  const starBar = (v) => h('span', { class: 'stars' }, h('span', { class: 'stars-bg' }, '★★★★★'), h('span', { class: 'stars-fg', style: { width: (v / 5 * 100) + '%' } }, '★★★★★'));
+  const rv = st.today?.rv || [0, 0, 0, 0, 0], n = rv.reduce((a, b) => a + b, 0), mx = Math.max(1, ...rv);
+  const dist = h('div', { class: 'rv-dist' }, [5, 4, 3, 2, 1].map((s) => h('div', { class: 'rv-row' }, h('span', {}, '★' + s), h('div', { class: 'sum-bar' }, h('i', { class: s >= 4 ? 'plus' : s <= 2 ? 'minus' : '', style: { width: Math.round(rv[s - 1] / mx * 100) + '%' } })), h('b', {}, rv[s - 1]))));
+  const x = (v) => '×' + v.toFixed(2).replace(/0$/, '');
+  const left = h('div', { class: 'rv-col' },
+    h('div', { class: 'rv-big' }, h('b', {}, stars.toFixed(1)), starBar(stars)),
+    h('div', { class: 'muted small' }, `評判 ${Math.round(st.rep)}/100（お客さんの評価の平均）`),
+    h('div', { class: 'sum-h' }, `📅 今日の評価 ${n ? '（' + n + '人）' : ''}`), n ? dist : h('p', { class: 'muted small' }, 'まだ評価がありません（営業するとお客さんが評価します）'),
+    h('div', { class: 'sum-h' }, '🚶 お客さんの来やすさ'),
+    h('div', { class: 'rv-fac' },
+      h('div', {}, `⭐ 評判 ${x(f.rep)}`), h('div', {}, `🏪 お店のレベル ${x(f.lv)}`), h('div', {}, `📐 売り場の広さ ${x(f.size)}`), f.ads > 1 ? h('div', {}, `📰 広告 ${x(f.ads)}`) : null,
+      h('div', { class: 'rv-total' }, `合計 ${x(f.rep * f.lv * f.size * f.ads)}`)),
+    h('div', { class: 'muted small' }, '評判が上がる：品切れなし・お手ごろな値段・レジが早い・品揃えが多い・装飾。下がる：品切れ・高すぎる値段・レジ待ち・通路の空き段ボール'));
+  const list = (st.reviews || []).length ? (st.reviews || []).map((r) => h('div', { class: 'rv-item' + (r.s <= 2 ? ' bad' : r.s >= 5 ? ' good' : '') },
+    h('div', { class: 'rv-head' }, h('span', { class: 'rv-s' }, '★'.repeat(r.s) + '☆'.repeat(5 - r.s)), h('span', { class: 'muted small' }, `${r.d}日目 ${fmtTime(r.t)}`)),
+    h('div', { class: 'rv-m' }, '「' + r.m + '」'))) : [h('p', { class: 'muted small' }, 'まだ口コミはありません')];
+  const right = h('div', { class: 'rv-col' }, h('div', { class: 'sum-h' }, '💬 最近の口コミ'), h('div', { class: 'rv-list' }, list));
+  return h('div', { class: 'rv-grid' }, left, right);
 }
 function priceRow(g, st, p, stocked, redraw, big, sm) {
   const cur = getPrice(st, p.id), mk = marketPrice(st, p.id), cost = marketCost(st, p.id), lim = priceLimit(st, p.id);

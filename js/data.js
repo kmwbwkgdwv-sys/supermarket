@@ -4,26 +4,37 @@ export const CELL = 0.5;
 export const BAY = 5;
 export const SALES = { x0: -25, z0: 6, cols: 10, rows: 4 }; // 売り場区画 b{列}{行}  行0=通り側（幅50m×奥行20m・最大40区画）
 export const BACK_Z = -14;    // 売り場と倉庫の境目（売り場は奥へ4列まで広がる）
-export const STOCK_Z = -22;   // 倉庫の奥の壁
+export const STOCK_MID_Z = -22; // 倉庫の手前の列と奥の列の境目
+export const STOCK_Z = -30;   // 倉庫の奥の壁（倉庫は手前8m＋奥8mの2列）
+export const OLD_STOCK_Z = -22; // v8 までの倉庫の奥の壁（セーブ移行用）
+// 倉庫の区画：横5列×縦2列（r=0 手前＝売り場側に出入口あり／r=1 奥）。c は左から 0〜4
 export const STOCK_SECTIONS = [
-  { id: 'st0', name: '倉庫A', x0: -5, x1: 5, door: [2, 4] },
-  { id: 'st1', name: '倉庫B（右）', x0: 5, x1: 15, door: [11, 13] },
-  { id: 'st2', name: '倉庫C（左）', x0: -15, x1: -5, door: [-13, -11] },
-  { id: 'st3', name: '倉庫D（右端）', x0: 15, x1: 25, door: [21, 23] },
-  { id: 'st4', name: '倉庫E（左端）', x0: -25, x1: -15, door: [-23, -21] },
+  { id: 'st4', name: '倉庫A', c: 0, r: 0, x0: -25, x1: -15, door: [-23, -21] },
+  { id: 'st2', name: '倉庫B', c: 1, r: 0, x0: -15, x1: -5, door: [-13, -11] },
+  { id: 'st0', name: '倉庫C', c: 2, r: 0, x0: -5, x1: 5, door: [2, 4] },
+  { id: 'st1', name: '倉庫D', c: 3, r: 0, x0: 5, x1: 15, door: [11, 13] },
+  { id: 'st3', name: '倉庫E', c: 4, r: 0, x0: 15, x1: 25, door: [21, 23] },
+  { id: 'sb4', name: '倉庫A奥', c: 0, r: 1, x0: -25, x1: -15 },
+  { id: 'sb2', name: '倉庫B奥', c: 1, r: 1, x0: -15, x1: -5 },
+  { id: 'sb0', name: '倉庫C奥', c: 2, r: 1, x0: -5, x1: 5 },
+  { id: 'sb1', name: '倉庫D奥', c: 3, r: 1, x0: 5, x1: 15 },
+  { id: 'sb3', name: '倉庫E奥', c: 4, r: 1, x0: 15, x1: 25 },
 ];
-export const STOCK_ORDER = ['st4', 'st2', 'st0', 'st1', 'st3']; // 左から順
-export const MANAGER = { x0: -5, x1: 0, z0: -27.5, z1: -22, door: [-3.6, -2.1] };
-export const DOCK = { x0: 0.6, x1: 4.6, z: -22 };
+for (const s of STOCK_SECTIONS) { s.z1 = s.r === 0 ? BACK_Z : STOCK_MID_Z; s.z0 = s.r === 0 ? STOCK_MID_Z : STOCK_Z; }
+export const STOCK_COLS = 5, STOCK_ROWS = 2;
+export const stockAt = (c, r) => STOCK_SECTIONS.find((s) => s.c === c && s.r === r);
+export const STOCK_ORDER = ['st4', 'st2', 'st0', 'st1', 'st3']; // 手前の列・左から順
+export const MANAGER = { x0: -5, x1: 0, z0: -35.5, z1: -30, door: [-3.6, -2.1] };
+export const DOCK = { x0: 0.6, x1: 4.6, z: -30 };
 export const DOOR = { x: 0, z: 6, half: 1.2 };
-export const BUILDING = { minX: -25, maxX: 25, minZ: -22, maxZ: 6 };
+export const BUILDING = { minX: -25, maxX: 25, minZ: -30, maxZ: 6 };
 // 最初から使える売り場：手前の 20m×10m（8区画）＋倉庫へつながる真ん中の奥 10m×10m（4区画）。
 // そこから左右にも奥にも1区画ずつ広げられる
 export const START_BAYS = ['b30', 'b31', 'b40', 'b41', 'b50', 'b51', 'b60', 'b61', 'b42', 'b43', 'b52', 'b53'];
 export const OLD_BACK_Z = -4; // v7 までの売り場の奥（セーブ移行用）
-export const START_STOCK = ['st0'];
-export const NAV_BOUNDS = { minX: -32, maxX: 32, minZ: -29, maxZ: 14 };
-export const PLAYER_BOUNDS = { minX: -33, maxX: 33, minZ: -34, maxZ: 17 };
+export const START_STOCK = ['st0', 'sb0']; // 真ん中の倉庫（手前＋奥）。奥の壁にマネージャー室と搬入口
+export const NAV_BOUNDS = { minX: -32, maxX: 32, minZ: -37, maxZ: 14 };
+export const PLAYER_BOUNDS = { minX: -33, maxX: 33, minZ: -42, maxZ: 17 };
 export const SPAWN_POINTS = [[-27.5, 8.2], [27.5, 8.2], [-27.5, 7.4], [27.5, 7.4]];
 export const PLAYER_SPAWN = [0, 3.6];
 export const DELIVERY_AREA = { minX: 2.2, maxX: 7.2, minZ: 10.4, maxZ: 13.0 }; // 店の前の駐車場（空から箱が降ってくる）
@@ -46,7 +57,7 @@ export function bayAt(x, z) {
   if (c < 0 || c >= SALES.cols || r < 0 || r >= SALES.rows) return null;
   return 'b' + c + r;
 }
-export function stockRect(sec) { return { id: sec.id, minX: sec.x0, maxX: sec.x1, minZ: STOCK_Z, maxZ: BACK_Z, kind: 'storage' }; }
+export function stockRect(sec) { return { id: sec.id, minX: sec.x0, maxX: sec.x1, minZ: sec.z0, maxZ: sec.z1, kind: 'storage' }; }
 // 使える区画の一覧（配置判定・経路探索用）
 export function zones(store) {
   const out = [];
@@ -63,17 +74,17 @@ export function expandTargets(store) {
     const nb = [[c - 1, r], [c + 1, r], [c, r - 1], [c, r + 1]].some(([a, b]) => store.bays?.['b' + a + b]);
     out.push({ id, kind: 'bay', can: nb, cost: expandCost(store, id) });
   }
-  // 倉庫も今ある倉庫のとなりから
-  STOCK_ORDER.forEach((id, i) => {
-    if (store.stock?.[id]) return;
-    const nb = [STOCK_ORDER[i - 1], STOCK_ORDER[i + 1]].some((o) => o && store.stock?.[o]);
-    out.push({ id, kind: 'stock', can: nb, cost: expandCost(store, id), name: STOCK_SECTIONS.find((s) => s.id === id).name });
-  });
+  // 倉庫も今ある倉庫のとなり（左右・手前と奥）から
+  for (const s of STOCK_SECTIONS) {
+    if (store.stock?.[s.id]) continue;
+    const nb = [[s.c - 1, s.r], [s.c + 1, s.r], [s.c, 1 - s.r]].some(([c, r]) => { const o = stockAt(c, r); return o && store.stock?.[o.id]; });
+    out.push({ id: s.id, kind: 'stock', can: nb, cost: expandCost(store, s.id), name: s.name });
+  }
   return out;
 }
 export function expandCost(store, id) {
   if (id.startsWith('b')) { const n = Math.max(0, Object.keys(store.bays || {}).length - START_BAYS.length); return Math.round(15000 * Math.pow(1.14, n) / 500) * 500; }
-  const n = Math.max(0, Object.keys(store.stock || {}).length - 1); return Math.round(30000 * Math.pow(1.45, n) / 500) * 500;
+  const n = Math.max(0, Object.keys(store.stock || {}).length - START_STOCK.length); return Math.round(30000 * Math.pow(1.3, n) / 500) * 500;
 }
 // 置けない場所（入口・通路・荷受け場の確保）
 export function keepClear(store) {
@@ -81,7 +92,8 @@ export function keepClear(store) {
     { minX: -1.7, maxX: 1.7, minZ: 4.0, maxZ: 6 },
     { minX: MANAGER.door[0] - 0.4, maxX: MANAGER.door[1] + 0.4, minZ: STOCK_Z, maxZ: STOCK_Z + 1.3 },
   ];
-  for (const s of STOCK_SECTIONS) k.push({ minX: s.door[0] - 0.4, maxX: s.door[1] + 0.4, minZ: BACK_Z - 1.2, maxZ: BACK_Z + 1.2 });
+  for (const s of STOCK_SECTIONS) if (s.door) k.push({ minX: s.door[0] - 0.4, maxX: s.door[1] + 0.4, minZ: BACK_Z - 1.2, maxZ: BACK_Z + 1.2 });
+  k.push({ minX: DOCK.x0 - 0.2, maxX: DOCK.x1 + 0.2, minZ: STOCK_Z, maxZ: STOCK_Z + 1.2 }); // 搬入口
   return k;
 }
 
@@ -97,7 +109,7 @@ export function getWalls(store) {
   H(L, MANAGER.door[0], STOCK_Z, 'outer'); H(MANAGER.door[1], DOCK.x0, STOCK_Z, 'outer'); H(DOCK.x1, R, STOCK_Z, 'outer');
   V(MANAGER.z0, MANAGER.z1, MANAGER.x0, 'outer'); V(MANAGER.z0, MANAGER.z1, MANAGER.x1, 'outer'); H(MANAGER.x0, MANAGER.x1, MANAGER.z0, 'outer');
   // 売り場と倉庫の境（両側が使えるときだけ出入口が開く）
-  const gaps = STOCK_SECTIONS.filter((s) => stock[s.id] && bays[bayAt((s.door[0] + s.door[1]) / 2, BACK_Z + 1)]).map((s) => s.door).sort((a, b) => a[0] - b[0]);
+  const gaps = STOCK_SECTIONS.filter((s) => s.door && stock[s.id] && bays[bayAt((s.door[0] + s.door[1]) / 2, BACK_Z + 1)]).map((s) => s.door).sort((a, b) => a[0] - b[0]);
   let x = L;
   for (const [g0, g1] of gaps) { H(x, g0, BACK_Z, 'inner'); x = g1; }
   H(x, R, BACK_Z, 'inner');
@@ -111,9 +123,11 @@ export function getWalls(store) {
     if (b.r > 0 && !bays['b' + b.c + (b.r - 1)]) H(b.minX, b.maxX, b.maxZ, 'part');               // 手前が未購入
   }
   // 倉庫どうしの仕切り（使える倉庫と使えない倉庫の境目）
-  for (let i = 0; i < STOCK_ORDER.length - 1; i++) {
-    const a = STOCK_SECTIONS.find((s) => s.id === STOCK_ORDER[i]), b = STOCK_SECTIONS.find((s) => s.id === STOCK_ORDER[i + 1]);
-    if (!!stock[a.id] !== !!stock[b.id]) V(STOCK_Z, BACK_Z, a.x1, 'part');
+  for (const s of STOCK_SECTIONS) {
+    const right = stockAt(s.c + 1, s.r);
+    if (right && !!stock[s.id] !== !!stock[right.id]) V(s.z0, s.z1, s.x1, 'part');
+    const back = stockAt(s.c, s.r + 1);
+    if (back && !!stock[s.id] !== !!stock[back.id]) H(s.x0, s.x1, s.z0, 'part');
   }
   // 区画の境目の柱
   for (let i = 1; i < SALES.cols; i++) for (let j = 1; j < SALES.rows; j++) {
@@ -452,6 +466,31 @@ export function pickSlot(type, lx, ly, lz) {
   });
   return best;
 }
+// 値札の位置（棚のローカル座標）。描画と「値札を狙う」判定で共通
+export function tagLocal(type, sl) {
+  let tx = sl.x, ty = sl.y - 0.04, tz = sl.z + sl.side * (sl.d / 2 + 0.024);
+  if (type === 'freezer') { ty = 0.72; tz = 0.506; }
+  if (type === 'produce') { ty = sl.y + 0.02; tz = sl.z + sl.d / 2 + 0.045; }
+  if (type === 'fridge') { ty = sl.y - 0.03; tz = 0.392; }
+  return [tx, ty, tz];
+}
+// 狙った点の近くにある値札（商品のラベルがついている枠だけ）。スマホでも狙いやすいよう少し広めに判定
+export function pickTag(f, lx, ly, lz) {
+  const def = FIXTURES[f.t];
+  if (!def?.slots || !f.s) return -1;
+  const two = def.slots.some((o) => o.side !== def.slots[0].side);
+  let best = -1, bd = 1e9;
+  def.slots.forEach((sl, i) => {
+    if (!f.s[i]?.[0]) return;
+    if (two && Math.sign(lz || 1) !== sl.side) return;
+    const [tx, ty, tz] = tagLocal(f.t, sl);
+    const dx = Math.abs(lx - tx), dy = Math.abs(ly - ty), dz = Math.abs(lz - tz);
+    if (dx > Math.max(0.1, sl.w * 0.45) || dy > 0.065 || dz > 0.2) return;
+    const dd = dx * dx + dy * dy * 4;
+    if (dd < bd) { bd = dd; best = i; }
+  });
+  return best;
+}
 export function pickBoxSlot(type, lx, ly) {
   const def = FIXTURES[type];
   let best = -1, bd = 1e9;
@@ -511,7 +550,8 @@ export const SKILLS_LIST = [
   // お店・設備
   S('fx_checkout2', 'レジ増設', '🧾', 1, 0, 1, ['start'], 'レジを最大3台まで置ける', 'shop'),
   S('fx_gondola', 'ゴンドラ棚', '🏬', 2, 0, 2, ['fx_checkout2'], '両面ゴンドラ棚が解放', 'shop'),
-  S('fx_selfreg', 'セルフレジ', '🤖', 3, 0, 3, ['fx_gondola'], 'セルフレジを設置できる', 'shop'),
+  S('fx_checkout3', 'レジ増設 II', '🧾', 2, 0, 3, ['fx_gondola'], 'レジを最大6台まで置ける（お客さんが増えたら）', 'shop'),
+  S('fx_selfreg', 'セルフレジ', '🤖', 3, 0, 4, ['fx_checkout3'], 'セルフレジを4台まで置ける。お客さんが自分でお会計（ただし遅く、使いたがらない人もいる）', 'shop'),
   S('fx_deco', '装飾アイテム', '🪴', 1, 1, 1, ['start'], 'ベンチ・自販機・ガチャ・花壇が解放', 'shop'),
   S('fx_sign', '看板職人', '🪧', 1, 1, 2, ['fx_deco'], 'スタンド看板・案内板・ネオン看板が解放', 'shop'),
   S('fx_rack2', '大型在庫棚', '🏗️', 2, 2, 1, ['start'], '16箱入る大型在庫棚が解放', 'shop'),
@@ -543,6 +583,8 @@ const LV_OVERRIDE = { prod_premium: 6, prod_premium2: 12, prod_drink4: 8, prod_b
 for (const sk of SKILLS_LIST) if (sk.branch === 'prod') sk.lv = LV_OVERRIDE[sk.id] ?? LV_BY_TIER[Math.min(sk.y, LV_BY_TIER.length - 1)];
 for (const sl of STAFF_SLOTS) { const sk = SKILLS_LIST.find((k) => k.id === 'staff_h' + sl.no); if (sk) { sk.lv = sl.lv; sk.slot = sl.no; } }
 SKILLS_LIST.find((k) => k.id === 'staff_speed').lv = 4;
+SKILLS_LIST.find((k) => k.id === 'fx_checkout3').lv = 10;
+SKILLS_LIST.find((k) => k.id === 'fx_selfreg').lv = 20;
 // 旧ライセンス → 新しい商品ノード（セーブ移行用）
 export const OLD_LICENSES = { lic_drink: ['prod_drink1', 'prod_drink2'], lic_chilled: ['prod_chilled1', 'prod_chilled2'], lic_frozen: ['prod_frozen1', 'prod_frozen2'],
   lic_produce: ['prod_produce1', 'prod_produce2'], lic_bakery: ['prod_bakery1'], lic_house: ['prod_house1', 'prod_house2'], lic_premium: ['prod_premium'] };
@@ -558,9 +600,19 @@ export const STAFF_NAMES = ['たなか', 'すずき', 'さとう', 'やまだ', 
 
 export function staffLimit(skills) { return STAFF_SLOTS.filter((sl) => skills['staff_h' + sl.no]).length; }
 export const staffSlotOpen = (skills, no) => !!skills['staff_h' + no];
-export function checkoutLimit(skills) { return skills.fx_checkout2 ? 3 : 1; }
+export function checkoutLimit(skills) { return skills.fx_checkout3 ? 6 : skills.fx_checkout2 ? 3 : 1; }
+export const SELF_MAX = 4; // セルフレジは4台まで（遅いのでこれだけでは回らない）
+// ハーフ箱：中身が半分の箱（値段も半分。送料は同じ）
+export const halfQty = (pid) => Math.ceil(PRODUCTS[pid].qty / 2);
+export const boxUnits = (pid, half) => (half ? halfQty(pid) : PRODUCTS[pid].qty);
 export function closeTime(skills) { return skills.mk_hours ? 24 * 60 : CLOSE_TIME; }
-export function xpNeed(level) { return 120 + (level - 1) * 95; }
+// お店のレベルは最大30。上がるほど次のレベルまでの経験値が増える（Lv1→2:120 / Lv10:約1,160 / Lv20:約4,970 / Lv29:約21,500）
+export const MAX_LEVEL = 30;
+export function xpNeed(level) { return Math.round((120 * Math.pow(1.2, level - 1) + 60 * (level - 1)) / 10) * 10; }
+// レベルアップでもらえるSP（高いレベルほど多い）：Lv2〜4は2、Lv5〜9は3 … Lv30は8
+export const spForLevel = (lv) => 2 + Math.floor(lv / 5);
+export const spTotalNew = (lv) => { let s = 0; for (let l = 2; l <= lv; l++) s += spForLevel(l); return s; };
+export const spTotalOld = (lv) => { let s = 0; for (let l = 2; l <= lv; l++) s += l % 5 === 0 ? 2 : 1; return s; };
 export function costMult(skills) { return skills.mk_bulk ? 0.9 : 1; }
 // 相場（日ごとに上下する）。値段の端数は元の価格に合わせる（例 ¥158）
 export function marketPrice(store, pid) {

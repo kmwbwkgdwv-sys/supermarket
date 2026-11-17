@@ -380,3 +380,29 @@ body.has-modal .toast { padding: 6px 12px; font-size: 12px; opacity: .95; }
 .scard.free { background: #f2fff6; outline: 2px dashed #20c08a; } .scard.locked { opacity: .55; }
 .role.hire { background: #20c08a; color: #fff; }
 @media (max-height: 520px) { .xgrid { gap: 4px; padding: 6px; } .xrow { gap: 4px; } .xcell { min-height: 34px; padding: 3px 2px; } .xrow .xcell b { font-size: 10px; } .xrow .xcell span { font-size: 9px; } }
+/* 発注：1箱／半分の2段 */
+.qtys { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; align-items: stretch; }
+.qtys .qty { margin: 0; gap: 6px; justify-content: flex-end; }
+.qty .ql { font-size: 11px; font-weight: 900; color: var(--muted); min-width: 28px; text-align: right; }
+.qty.half button { background: #ff9a6b; }
+.pc-body .pcard2 .qtys { grid-column: 3; grid-row: 1 / 4; margin: 0; gap: 3px; }
+.pc-body .pcard2 .qtys .qty { gap: 3px; max-width: none; }
+@media (max-height: 520px) { .pc-body .pcard2 .qtys .qty button { width: 26px; height: 26px; font-size: 15px; } .qty .ql { font-size: 10px; min-width: 24px; } }
+/* 評判（口コミ） */
+.rv-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; }
+@media (max-width: 600px) { .rv-grid { grid-template-columns: 1fr; } }
+.rv-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rv-big { display: flex; align-items: center; gap: 10px; } .rv-big b { font-size: 40px; font-weight: 900; color: #f2a900; line-height: 1; }
+.stars { position: relative; display: inline-block; font-size: 24px; letter-spacing: 2px; line-height: 1; }
+.stars-bg { color: #e3ddd6; } .stars-fg { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: #f2a900; }
+.rv-dist { display: flex; flex-direction: column; gap: 2px; }
+.rv-row { display: grid; grid-template-columns: 30px 1fr 28px; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; } .rv-row b { text-align: right; }
+.rv-fac { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; font-size: 12px; font-weight: 800; } .rv-total { grid-column: 1 / -1; color: var(--pri); }
+.rv-list { display: flex; flex-direction: column; gap: 6px; }
+.rv-item { background: #fffaf6; border: 2px solid #f4efea; border-radius: 12px; padding: 6px 10px; }
+.rv-item.good { border-color: #c9f2df; } .rv-item.bad { border-color: #ffd0d6; background: #fff6f7; }
+.rv-head { display: flex; justify-content: space-between; align-items: center; } .rv-s { color: #f2a900; font-size: 14px; letter-spacing: 1px; }
+.rv-m { font-weight: 800; font-size: 13px; }
+@media (max-height: 520px) { .rv-big b { font-size: 30px; } .stars { font-size: 18px; } .rv-m { font-size: 12px; } }
+.qty .ql { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; } .qty .ql small { font-size: 10px; color: var(--ink); font-weight: 800; }
+@media (max-height: 520px) { .qty .ql small { font-size: 9px; } }

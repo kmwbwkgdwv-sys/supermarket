@@ -116,7 +116,7 @@ export class World {
     };
     for (let x = -32; x <= 32; x += 8) if (Math.abs(x) > 3) tree(x, 10.5, 0.85);
     for (let i = 0; i < 24; i++) { const a = r() * Math.PI * 2, d = 40 + r() * 30; tree(Math.cos(a) * d, Math.sin(a) * d * 0.8 - 6, 0.9 + r() * 0.7); }
-    for (const [x, z] of [[L - 4, -4], [L - 5, 2], [R + 4, -6], [R + 5, 1], [L - 4, -14], [R + 4, -18], [L - 4.5, -24], [R + 4.5, -27], [L - 5, -31]]) tree(x, z, 1.05);
+    for (const [x, z] of [[L - 4, -4], [L - 5, 2], [R + 4, -6], [R + 5, 1], [L - 4, -14], [R + 4, -18], [L - 4.5, -24], [R + 4.5, -27], [L - 5, -31], [R + 5, -36], [L - 4.5, -39]]) tree(x, z, 1.05);
     // 植え込み
     const bushM = mat('#ffffff', { vc: true, r: 0.9 });
     for (let x = L + 0.5; x <= R - 0.5; x += 1.15) if (Math.abs(x) > 2.4) { const geo = T(new THREE.IcosahedronGeometry(0.42, 2), x, 0.3, 6.62, 0, x, 0, 1.1, 0.75, 0.6); vgrad(geo, '#2c5f2e', '#5f9c48', 0, 0.6); add(g, geo, bushM); }
@@ -259,7 +259,7 @@ export class World {
     this.roofMat = C(0x8d939b, { r: 0.92 });
     add(g, T(box(R - L + 0.6, 0.4, 6 - STOCK_Z + 0.6), 0, WALL_H, (6 + STOCK_Z) / 2), this.roofMat);
     add(g, T(box(31, 0.6, 0.3), 0, WALL_H, 6.2), C(0xf2f0eb, { r: 0.6 }));
-    for (const [x, z] of [[-9, -7], [-5, -6], [7, -4], [11, -8], [0, -9], [-14, -16], [6, -18], [16, -12]]) { add(g, T(rbox(1.6, 0.9, 1.2, 0.05), x, WALL_H + 0.4, z), C(0xd6d6d6, { r: 0.5, m: 0.4 })); add(g, T(cyl(0.45, 0.45, 0.05, 16), x, WALL_H + 1.3, z), C(0x555555)); }
+    for (const [x, z] of [[-9, -7], [-5, -6], [7, -4], [11, -8], [0, -9], [-14, -16], [6, -18], [16, -12], [-8, -25], [12, -26]]) { add(g, T(rbox(1.6, 0.9, 1.2, 0.05), x, WALL_H + 0.4, z), C(0xd6d6d6, { r: 0.5, m: 0.4 })); add(g, T(cyl(0.45, 0.45, 0.05, 16), x, WALL_H + 1.3, z), C(0x555555)); }
     // ひさし
     this.awningMat = mat(0xffffff, { map: tex('stripes'), r: 0.75 });
     for (const [x0, x1] of [[L, -2.2], [2.2, R]]) add(g, T(box(x1 - x0, 0.05, 1.3), (x0 + x1) / 2, 3.28, 6.6, 0.35), this.awningMat);
@@ -331,6 +331,7 @@ export class World {
     // 倉庫入口の上の壁とのれん・表示
     const strip = new THREE.MeshStandardMaterial({ color: 0xd8eef7, transparent: true, opacity: 0.32, roughness: 0.2, side: THREE.DoubleSide, depthWrite: false });
     for (const s of STOCK_SECTIONS) {
+      if (!s.door) continue; // 奥の倉庫は売り場に面していない
       const open = store.stock?.[s.id] && store.bays?.[bayAt((s.door[0] + s.door[1]) / 2, BACK_Z + 1)];
       if (!open) continue;
       const cx = (s.door[0] + s.door[1]) / 2, w = s.door[1] - s.door[0];
@@ -352,8 +353,8 @@ export class World {
     }
     for (const s of STOCK_SECTIONS) {
       const cx = (s.x0 + s.x1) / 2;
-      if (store.stock?.[s.id]) for (const dx of [-2.5, 2.5]) for (const z of [BACK_Z - 2.5, STOCK_Z + 2.2]) lights.push(T(plane(1.6, 0.25), cx + dx, CEIL - 0.012, z, Math.PI / 2));
-      else { const f = M(T(plane(s.x1 - s.x0 - 0.1, STOCK_Z - BACK_Z + 0.1 > 0 ? 7.9 : 7.9), cx, 0.008, (STOCK_Z + BACK_Z) / 2, -Math.PI / 2), smat(surf('concrete'), 0x8f8d86, { r: 0.95 }), false); D.add(f); }
+      if (store.stock?.[s.id]) for (const dx of [-2.5, 2.5]) for (const z of [s.z1 - 2.3, s.z0 + 2.3]) lights.push(T(plane(1.6, 0.25), cx + dx, CEIL - 0.012, z, Math.PI / 2));
+      else { const f = M(T(plane(s.x1 - s.x0 - 0.1, s.z1 - s.z0 - 0.1), cx, 0.008, (s.z0 + s.z1) / 2, -Math.PI / 2), smat(surf('concrete'), 0x8f8d86, { r: 0.95 }), false); D.add(f); }
     }
     const mcx = (MANAGER.x0 + MANAGER.x1) / 2, mcz = (MANAGER.z0 + MANAGER.z1) / 2;
     lights.push(T(plane(1.6, 0.25), mcx, WALL_H - 0.612, mcz, Math.PI / 2));
@@ -365,7 +366,7 @@ export class World {
     // 室内灯の位置（描画側が使う）
     this.lightSpots = [];
     for (const id of ALL_BAYS) if (store.bays?.[id]) { const b = bayRect(id); this.lightSpots.push([(b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2]); }
-    for (const s of STOCK_SECTIONS) if (store.stock?.[s.id]) this.lightSpots.push([(s.x0 + s.x1) / 2, (BACK_Z + STOCK_Z) / 2]);
+    for (const s of STOCK_SECTIONS) if (store.stock?.[s.id]) this.lightSpots.push([(s.x0 + s.x1) / 2, (s.z0 + s.z1) / 2]);
     this.lightSpots.push([mcx, mcz]);
   }
   update(dt, timeMin, chars) {
