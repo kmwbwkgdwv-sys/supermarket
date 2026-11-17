@@ -5,7 +5,7 @@ import { Character, randomAvatar, sanitizeAvatar } from './models/character.js';
 import { Input } from './input.js';
 import { Music, Sfx } from './audio.js';
 import { Cloud, FirebaseRoom, LocalRoom } from './net.js';
-import { loadSettings, saveSettings, loadProfile, createProfile, saveProfileLocal, syncUp, syncDown, restoreByCode, rankEntry } from './save.js';
+import { loadSettings, saveSettings, loadProfile, createProfile, saveProfileLocal, syncUp, syncDown, restoreByCode, rankEntry, evictOldShop } from './save.js';
 import { showWelcome, showMenu, showCode, showEditor, openSettings, hideScreen, toast, choiceBox, h, $ } from './ui.js';
 import { GameUI } from './gameui.js';
 import { Game } from './game.js';
@@ -142,11 +142,12 @@ class App {
       if (saved) { store = saved; cont = saved; }
       else {
         const own = this.profile.store;
-        const pick = await choiceBox('🏪 みんなの店を作る', `ルーム「${id}」のお店はまだありません。どのお店でみんなと経営しますか？（ここで決めたお店がこのルームIDに保存され、次からは誰がホストでも続きから遊べます）`, [
-          ['mine', `🏪 自分のお店のデータで始める`, `${own.name}・Lv.${own.level}・${own.day}日目（これまでルームで進めたお店もここ）`],
+        const pick = await choiceBox('🏪 みんなの店を作る', `ルーム「${id}」にはまだ誰もいなくて、お店もありません。どのお店でみんなと経営しますか？（ここで決めたお店がこのルームIDに保存され、次からは誰がホストでも続きから遊べます。自分のお店はコピーして使うので、ルームで何をしても自分のお店は変わりません）`, [
+          ['mine', `🏪 自分のお店をコピーして始める`, `${own.name}・Lv.${own.level}・${own.day}日目のコピー`],
           ['new', '🆕 新しいお店で始める', 'Lv.1・1日目から'],
+          ['wait', '↩ やめる（友だちのルームに入りたい）', 'IDが合っているか確認して、友だちが先に入ってから参加してね'],
         ]);
-        if (!pick) { room.leave(); throw new Error('キャンセルしました'); }
+        if (!pick || pick === 'wait') { room.leave(); throw new Error(pick === 'wait' ? 'もどりました。友だちが先にルームに入ってから、同じIDで参加してね' : 'キャンセルしました'); }
         store = pick === 'mine' ? JSON.parse(JSON.stringify(own)) : newStore(`${this.profile.name.slice(0, 6)}たちのお店`);
       }
       normalizeStore(store);
@@ -173,7 +174,11 @@ class App {
     if (!g?.shared || !g.sim) return;
     const st = g.sim.store, id = g.roomId;
     const data = { d: JSON.stringify(st), t: Date.now(), n: String(st.name || '').slice(0, 16), lv: st.level, day: st.day, by: this.profile.name };
-    try { localStorage.setItem(this.shopKey(id), JSON.stringify(data)); } catch (e) { /* 容量オーバーなど */ }
+    // 端末の中にも控えを置く（いっぱいなら古いルームの控えから消す）
+    const json = JSON.stringify(data);
+    for (let tries = 0; tries < 10; tries++) {
+      try { localStorage.setItem(this.shopKey(id), json); break; } catch (e) { if (!evictOldShop(this.shopKey(id))) break; }
+    }
     this.rememberRoom(id, st);
     const now = Date.now();
     if (!g.local && this.cloud.configured && (cloud || now - (this._lastShop || 0) > 30000)) {

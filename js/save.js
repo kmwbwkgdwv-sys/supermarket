@@ -58,9 +58,26 @@ export function fixProfile(p) {
   p.playTime ||= 0; p.pid ||= randomCode(10);
   return p;
 }
+// 端末の容量がいっぱいのとき、いちばん古い「みんなの店」の控えを1つ消す（keep は消さない）。消せたら true
+export function evictOldShop(keep) {
+  const s = ls(); if (!s) return false;
+  let oldK = null, oldT = Infinity;
+  for (let i = 0; i < s.length; i++) {
+    const k = s.key(i); if (!k || !k.startsWith('martmates.shop.') || k === keep) continue;
+    let t = 0; try { t = JSON.parse(s.getItem(k))?.t || 0; } catch (e) { t = 0; }
+    if (t < oldT) { oldT = t; oldK = k; }
+  }
+  if (!oldK) return false;
+  s.removeItem(oldK); return true;
+}
+// 自分のお店の保存。容量がいっぱいなら古いみんなの店の控えから消して、自分のお店は必ず保存する
 export function saveProfileLocal(p) {
   p.updated = Date.now();
-  try { ls()?.setItem(KEY, JSON.stringify(p)); return true; } catch (e) { console.warn(e); return false; }
+  const json = JSON.stringify(p);
+  for (let tries = 0; tries < 20; tries++) {
+    try { ls()?.setItem(KEY, json); return true; } catch (e) { if (!evictOldShop(null)) { console.warn('保存できません', e); return false; } }
+  }
+  return false;
 }
 export function clearProfile() { try { ls()?.removeItem(KEY); } catch (e) { /* noop */ } }
 export { normalizeCode };
