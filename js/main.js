@@ -5,7 +5,7 @@ import { Character, randomAvatar, sanitizeAvatar } from './models/character.js';
 import { Input } from './input.js';
 import { Music, Sfx } from './audio.js';
 import { Cloud, FirebaseRoom, LocalRoom } from './net.js';
-import { loadSettings, saveSettings, loadProfile, createProfile, saveProfileLocal, syncUp, syncDown, restoreByCode, rankEntry, listOwnStores, switchStore, importStore } from './save.js';
+import { loadSettings, saveSettings, loadProfile, createProfile, saveProfileLocal, syncUp, syncDown, restoreByCode, rankEntry, listOwnStores, switchStore, importStore, storeProgress } from './save.js';
 import { showWelcome, showMenu, showCode, showEditor, openSettings, hideScreen, toast, choiceBox, h, $ } from './ui.js';
 import { GameUI } from './gameui.js';
 import { Game } from './game.js';
@@ -57,13 +57,14 @@ class App {
     setTimeout(() => $('#boot')?.classList.add('gone'), 250);
     if (this.profile) {
       this.showMenu();
+      this.importRoomShops();
       syncDown(this.cloud, this.profile).then((p) => { if (p !== this.profile && this.mode === 'menu') { this.profile = p; toast('☁ クラウドの新しいデータを読み込みました', 'ok'); this.showMenu(); } this.pushRank(); this.importRoomShops(); });
     } else showWelcome(this);
   }
 
   // ---------- プロフィール ----------
   createProfile(name) { this.profile = createProfile(name); this.saveLocal(); }
-  async restore(code) { this.profile = await restoreByCode(this.cloud, code); this.pushRank(); }
+  async restore(code) { this.profile = await restoreByCode(this.cloud, code); this.pushRank(); this.importRoomShops(); }
   saveLocal() { if (this.profile) saveProfileLocal(this.profile); }
   async syncNow() { if (!this.profile) return { ok: false, reason: 'データなし' }; this.saveLocal(); const r = await syncUp(this.cloud, this.profile); if (r.ok) this.pushRank(); return r; }
   saveGame(cloud) {
@@ -170,29 +171,54 @@ class App {
     this.profile.rooms = [e, ...list].slice(0, 8);
     if (!prev || prev.lv !== e.lv || prev.day !== e.day || prev.n !== e.n) this.saveLocal();
   }
-  // 前の版の「みんなの店」（ホストしたルームのお店）を、自分のお店に取りこむ（1回だけ）。
-  // 自分のお店をコピーして作ったお店なら、進んでいる方を自分のお店にする。新しく作ったお店は自分のお店の一覧に足す
+  // 前の版の「みんなの店」（自分がホストして育てたルームのお店）を、自分のお店に取りこむ。
+  // 自分のお店をコピーして作ったお店なら進んでいる方を残し、新しく作ったお店は自分のお店の一覧に足す。
+  // 取りこんだお店の方が進んでいれば、それを「いま遊ぶお店」にする（ひとりで経営・ランキングもそのお店で）
+  // 端末の中の控えを先に、そのあとクラウドの分（通信が止まっても待ちすぎない）
   async importRoomShops() {
     const p = this.profile;
-    if (!p || p.roomsImported) return;
-    const hosted = (p.rooms || []).filter((r) => r.h);
-    let cloudOk = !this.cloud.configured;
-    if (this.cloud.configured) { try { cloudOk = !!(await this.cloud.ready); } catch (e) { cloudOk = false; } }
+    if (!p || this._importing === p) return;
+    if (this.game) { this._importLater = true; return; } // 遊んでいる間はお店を入れかえない（終わってから）
+    this._importing = p;
+    const wait = (pr, ms) => Promise.race([pr, new Promise((res) => setTimeout(() => res(null), ms))]);
+    try {
+      p.shopImports ||= {};
+      const ids = new Set((p.rooms || []).map((r) => r.id));
+      const local = {};
+      try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('martmates.shop.')) ids.add(k.slice('martmates.shop.'.length)); } } catch (e) { /* noop */ }
+      for (const id of ids) { try { const l = JSON.parse(localStorage.getItem('martmates.shop.' + id) || 'null'); if (l?.d) local[id] = l; } catch (e) { /* noop */ } }
+      this._applyShopImports(p, Object.entries(local));
+      if (!this.cloud.configured || !(await wait(this.cloud.ready, 8000))) return;
+      const remote = [];
+      for (const id of ids) { try { const c = await wait(this.cloud.loadShop(id), 6000); if (c?.d) remote.push([id, c]); } catch (e) { /* ルールが古いなどで読めない */ } }
+      if (this.profile === p) this._applyShopImports(p, remote);
+    } finally { if (this._importing === p) this._importing = null; }
+  }
+  _applyShopImports(p, recs) {
+    if (this.game) { this._importLater = true; return; }
+    const hosted = new Set((p.rooms || []).filter((r) => r.h).map((r) => r.id));
     const found = [];
-    for (const r of hosted) {
-      let best = null;
-      try { const l = JSON.parse(localStorage.getItem('martmates.shop.' + r.id) || 'null'); if (l?.d) best = l; } catch (e) { /* noop */ }
-      if (cloudOk && this.cloud.configured) { try { const c = await this.cloud.loadShop(r.id); if (c?.d && (!best || (c.t || 0) >= (best.t || 0))) best = c; } catch (e) { cloudOk = false; } }
-      if (best) { try { found.push([best.t || 0, normalizeStore(JSON.parse(best.d))]); } catch (e) { /* 読めないデータは飛ばす */ } }
+    for (const [id, c] of recs) {
+      // 自分がホストして保存したお店だけ（参加しただけのルームのお店は取りこまない）
+      if (!((c.pid ? c.pid === p.pid : c.by === p.name) || hosted.has(id))) continue;
+      if ((p.shopImports[id] || 0) >= (c.t || 1)) continue;
+      try { found.push([id, c.t || 1, normalizeStore(JSON.parse(c.d))]); } catch (e) { /* 読めないデータは飛ばす */ }
     }
-    const done = [];
-    for (const [, st] of found.sort((a, b) => a[0] - b[0])) { const r = importStore(p, st); if (r && r !== 'full') done.push(`${st.name}（Lv.${st.level}）`); }
-    if (!cloudOk && hosted.length) { if (done.length) this.saveLocal(); return; } // 通信できないときは次の起動でもう一度
-    p.roomsImported = 1;
-    for (const r of p.rooms || []) delete r.h;
-    try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith('martmates.shop.')) localStorage.removeItem(k); } } catch (e) { /* noop */ }
-    this.saveLocal(); this.syncNow();
-    if (done.length) { toast(`🏪 ルームで育てたお店を自分のお店にしました：${done.join('、')}（「ひとりで経営」で続きから遊べます）`, 'ok', 6000); if (this.mode === 'menu') this.showMenu(); }
+    if (!found.length) return;
+    const done = [], touched = [];
+    for (const [id, t, st] of found.sort((a, b) => a[1] - b[1])) {
+      const r = importStore(p, st);
+      p.shopImports[id] = t;
+      if (r.k && r.k !== 'full') done.push(`${st.name}（Lv.${st.level}）`);
+      if (r.sid) touched.push(r.sid);
+    }
+    // 取りこんだお店のうち、いまのお店より進んでいるものがあれば、それを「いま遊ぶお店」に
+    const own = listOwnStores(p), cur = own.find((o) => o.cur);
+    const top = own.filter((o) => touched.includes(o.sid)).sort((a, b) => storeProgress(b) - storeProgress(a))[0];
+    if (top && !top.cur && storeProgress(top) > storeProgress(cur)) { switchStore(p, top.sid); this.renderer.storeRev = -1; }
+    this.saveLocal(); this.syncNow().then(() => this.pushRank());
+    if (done.length) toast(`🏪 ホストして育てたお店を自分のお店にしました：${done.join('、')}。「ひとりで経営」で続きから遊べて、ランキングにも載ります`, 'ok', 6500);
+    if (this.mode === 'menu') this.showMenu();
   }
   endGame(fromClose) {
     if (!this.game) return;
@@ -203,6 +229,7 @@ class App {
     this.pushRank();
     this.renderer.storeRev = -1;
     this.showMenu();
+    if (this._importLater) { this._importLater = false; this.importRoomShops(); }
     void fromClose;
   }
 

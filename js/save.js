@@ -146,23 +146,28 @@ export function newOwnStore(p, name) {
   return true;
 }
 // ほかから来たお店を自分のお店に入れる。同じお店（作った時刻 created が同じ）があれば、進んでいる方を残す
-// 戻り値：'cur'（いまのお店を置きかえ）/'slot'（ほかのお店を置きかえ）/'new'（一覧に追加）/'full'（いっぱい）/null（今のままの方が進んでいる）
+// 戻り値：{ k: 'cur'（いまのお店を置きかえ）/'slot'（ほかのお店を置きかえ）/'new'（一覧に追加）/'full'（いっぱい）/null（今のままの方が進んでいる）, sid }
+export const storeProgress = (s) => (s.level || s.lv || 1) * 1e10 + (s.day || 1) * 1e6 + Math.min(999999, Math.round((s.totalSales ?? s.sales ?? 0) / 1000));
 export function importStore(p, st) {
-  const prog = (s) => (s.level || 1) * 1e10 + (s.day || 1) * 1e6 + Math.min(999999, Math.round((s.totalSales || 0) / 1000));
-  if (st.created && p.store?.created === st.created) { if (prog(st) > prog(p.store)) { p.store = st; return 'cur'; } return null; }
+  const prog = storeProgress;
+  if (st.created && p.store?.created === st.created) { if (prog(st) > prog(p.store)) { p.store = st; return { k: 'cur', sid: p.cur }; } return { k: null, sid: p.cur }; }
   for (const s of p.slots || []) {
     let o = null; try { o = JSON.parse(s.d); } catch (e) { continue; }
-    if (st.created && o?.created === st.created) { if (prog(st) > prog(o)) { Object.assign(s, slotInfo(s.sid, st), { d: JSON.stringify(st) }); return 'slot'; } return null; }
+    if (st.created && o?.created === st.created) { if (prog(st) > prog(o)) { Object.assign(s, slotInfo(s.sid, st), { d: JSON.stringify(st) }); return { k: 'slot', sid: s.sid }; } return { k: null, sid: s.sid }; }
   }
-  if (listOwnStores(p).length >= MAX_OWN_STORES) return 'full';
-  p.slots = [...(p.slots || []), { ...slotInfo(randomCode(6), st), d: JSON.stringify(st) }];
-  return 'new';
+  if (listOwnStores(p).length >= MAX_OWN_STORES) return { k: 'full' };
+  const sid = randomCode(6);
+  p.slots = [...(p.slots || []), { ...slotInfo(sid, st), d: JSON.stringify(st) }];
+  return { k: 'new', sid };
 }
 export function deleteStore(p, sid) {
   if (sid === p.cur) return false;
   p.slots = (p.slots || []).filter((o) => o.sid !== sid);
   return true;
 }
+// ランキング：自分のお店のうち、いちばん進んでいるお店で載せる
 export function rankEntry(p) {
-  return { n: p.name, lv: p.store.level, s: Math.round(p.store.totalSales), p: Math.round(p.playTime), d: p.store.day, h: p.av.hat, st: (p.store.name || '').slice(0, 16), t: Date.now() };
+  const best = listOwnStores(p).sort((a, b) => (b.lv || 1) - (a.lv || 1) || (b.sales || 0) - (a.sales || 0))[0];
+  const st = best && !best.cur ? best : { lv: p.store.level, sales: Math.round(p.store.totalSales), day: p.store.day, n: p.store.name };
+  return { n: p.name, lv: st.lv || 1, s: Math.round(st.sales || 0), p: Math.round(p.playTime), d: st.day || 1, h: p.av.hat, st: String(st.n || '').slice(0, 16), t: Date.now() };
 }
