@@ -624,9 +624,9 @@ export const halfQty = (pid) => Math.ceil(PRODUCTS[pid].qty / 2);
 export const boxUnits = (pid, half) => (half ? halfQty(pid) : PRODUCTS[pid].qty);
 export function closeTime(skills) { return skills.mk_hours ? 24 * 60 : CLOSE_TIME; }
 // お店のレベルは最大30。上がるほど次のレベルまでの経験値がどんどん増える（Lv1→2:250 / Lv5:約950 / Lv10:約2,750 / Lv20:約12,800 / Lv29:約68,000）
-// 経験値は売上 ¥100 につき 1（XP_YEN）
+// 経験値は売上 ¥300 につき 1（XP_YEN）
 export const MAX_LEVEL = 30;
-export const XP_YEN = 100;
+export const XP_YEN = 300;
 export function xpNeed(level) { return Math.round((250 * Math.pow(1.22, level - 1) + 100 * (level - 1)) / 10) * 10; }
 // レベルアップでもらえるSP（高いレベルほど多い）：Lv2〜4は2、Lv5〜9は3 … Lv30は8
 export const spForLevel = (lv) => 2 + Math.floor(lv / 5);
