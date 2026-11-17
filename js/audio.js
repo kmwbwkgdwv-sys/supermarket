@@ -208,7 +208,7 @@ export function audioCtx() {
 function setSession(settings) {
   try {
     if (!navigator.audioSession) return;
-    navigator.audioSession.type = settings.bgPlay || settings.silentPlay ? 'playback' : 'ambient';
+    navigator.audioSession.type = settings.silentPlay ? 'playback' : 'ambient';
   } catch (e) { /* 未対応 */ }
 }
 export class Music {
@@ -218,14 +218,15 @@ export class Music {
     this.blobs = new Map(); this.urls = new Map(); this.bufs = new Map();
     this.src = null; this.gain = null; this.current = null; this.mode = null; this.unlocked = false; this.loading = null;
     setSession(settings);
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        if (!this.settings.bgPlay) { this.el?.pause(); _ctx?.suspend?.().catch?.(() => {}); }
-      } else if (this.unlocked) {
-        _ctx?.resume?.().catch?.(() => {});
-        if (this.mode === 'el' && this.current && this.settings.bgm !== 'off') this.el?.play().catch(() => {});
-      }
-    });
+    this.settings.bgPlay = false; // バックグラウンドでは流さない
+    // アプリを離れたら（別アプリ・ホーム画面・画面ロック）音を止め、戻ってきたら再開する
+    const pause = () => { this.el?.pause(); try { _ctx?.suspend?.()?.catch?.(() => {}); } catch (e) { /* noop */ } };
+    const resume = () => { if (!this.unlocked || document.hidden) return; try { _ctx?.resume?.()?.catch?.(() => {}); } catch (e) { /* noop */ } };
+    document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else resume(); });
+    window.addEventListener('pagehide', pause);
+    window.addEventListener('pageshow', resume);
+    document.addEventListener('freeze', pause);
+    window.addEventListener('focus', resume);
   }
   step(d) {
     const ids = TRACKS.map((t) => t.id);
@@ -267,7 +268,7 @@ export class Music {
     const { blob, title, mood } = await this._blob(id);
     if (!blob) { if (id === 'custom') { this.settings.bgm = 'pop'; return this.play('pop'); } return; }
     if (this.settings.bgm !== id) return; // 生成中に曲が変わった
-    const mode = this.settings.bgPlay ? 'el' : 'wa';
+    const mode = 'wa'; // いつもゲームの中だけで鳴らす（バックグラウンド再生・アイランド表示なし）
     if (mode === 'el') {
       // バックグラウンド再生：<audio> で流す（ロック画面・ダイナミックアイランドにも出る）
       this._stopWA();

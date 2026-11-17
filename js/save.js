@@ -28,7 +28,7 @@ export function loadSettings() {
   // v3：一人称視点がデフォルトに（一度だけ切り替え）
   if (!s.__fp) { out.cam = 'first'; out.__fp = true; }
   // v6.6：BGM はふだんゲームの中だけで鳴らす（ダイナミックアイランドに出さない）。一度だけオフに戻す
-  if (!s.__island) { out.bgPlay = false; out.__island = true; }
+  out.bgPlay = false; out.__island = true; // バックグラウンド再生はしない（常にオフ）
   return out;
 }
 export function saveSettings(s) { try { ls()?.setItem(SKEY, JSON.stringify(s)); } catch (e) { /* noop */ } }
