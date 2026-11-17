@@ -406,3 +406,4 @@ body.has-modal .toast { padding: 6px 12px; font-size: 12px; opacity: .95; }
 @media (max-height: 520px) { .rv-big b { font-size: 30px; } .stars { font-size: 18px; } .rv-m { font-size: 12px; } }
 .qty .ql { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; } .qty .ql small { font-size: 10px; color: var(--ink); font-weight: 800; }
 @media (max-height: 520px) { .qty .ql small { font-size: 9px; } }
+.wage-total { font-weight: 900; font-size: 15px; background: #fff4e8; border-radius: 12px; padding: 6px 10px; margin-bottom: 4px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }

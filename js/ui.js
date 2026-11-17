@@ -1,6 +1,6 @@
 // ===== 画面UI（タイトル・メニュー・設定・ランキング・キャラメイク） =====
 import { yen, fmtDuration, formatCode, normalizeCode, randomCode, escapeText } from './util.js';
-import { TRACKS, saveCustom } from './audio.js';
+import { TRACKS, saveCustom, applySoundMode } from './audio.js';
 import { OPT, SKINS, HAIR_COLORS, CLOTH_COLORS, EYE_COLORS, randomAvatar, sanitizeAvatar } from './models/character.js';
 
 // ---------- DOMヘルパー ----------
@@ -220,6 +220,10 @@ function rankRow(rank, r, me) {
 export function openSettings(app, { inGame = false, onClose } = {}) {
   const s = app.settings;
   const save = () => app.applySettings();
+  const modeText = () => (s.soundMode === 'solo'
+    ? '🔔 マナーモード中でも鳴ります。そのかわり Spotify などほかのアプリの音楽は止まります。'
+    : '🎧 Spotify などの音楽を止めずに、ゲームの音もいっしょに鳴ります（iPhoneはマナーモード（消音）を切ると聞こえます）。');
+  const modeNote = h('p', { class: 'muted small' }, modeText());
   const sw = (key, label, after) => { const c = h('input', { type: 'checkbox' }); c.checked = !!s[key]; c.onchange = () => { s[key] = c.checked; save(); after && after(); }; return h('label', { class: 'set-row' }, h('span', {}, label), h('span', { class: 'switch' }, c, h('i'))); };
   const slider = (key, label, min, max, step, fmt = (v) => v) => {
     const out = h('b', {}, fmt(s[key]));
@@ -266,8 +270,13 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     h('div', { class: 'row' }, h('button', { class: 'btn small ghost', onclick: () => fileInp.click() }, '📁 端末の曲を選ぶ'), fileInp),
     slider('bgmVol', 'BGM音量', 0, 1, 0.05, (v) => Math.round(v * 100)),
     slider('sfxVol', '効果音', 0, 1, 0.05, (v) => Math.round(v * 100)),
-    h('p', { class: 'muted small' }, '🔊 BGMと効果音はいっしょに鳴ります。ゲームの中だけで鳴るので、ダイナミックアイランドやロック画面には表示されません。'),
-    sw('silentPlay', 'マナーモード中も音を出す', () => app.music.play(s.bgm)),
+    select('soundMode', '音の鳴らし方', [['mix', '🎧 ほかのアプリと一緒に（Spotifyなど）'], ['solo', '🔔 マナーモードでも鳴らす']], () => { s.silentPlay = s.soundMode === 'solo'; save(); applySoundMode(s); app.music.play(s.bgm); modeNote.textContent = modeText(); }),
+    modeNote,
+    h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => {
+      s.soundMode = 'mix'; s.silentPlay = false; s.bgm = 'off'; save(); applySoundMode(s); app.music.play('off');
+      toast('🎧 BGMを止めて効果音だけにしました。Spotifyを流しながら遊べます', 'ok'); m.close(); app.reopenSettings(inGame);
+    } }, '🎧 Spotifyを聴きながら遊ぶ（BGMなし・効果音あり）')),
+    h('p', { class: 'muted small' }, '🔊 BGMと効果音はゲームの中だけで鳴るので、ダイナミックアイランドやロック画面には表示されません。'),
     h('p', { class: 'muted small' }, '※ アプリを閉じたり画面をロックしたりすると、BGMと効果音は止まります（戻ると続きから流れます）。'),
     h('h3', {}, '💾 データ'),
     p ? h('div', { class: 'set-row' }, h('span', {}, '引き継ぎコード'), h('b', { class: 'mono' }, formatCode(p.code))) : null,

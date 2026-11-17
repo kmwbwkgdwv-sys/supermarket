@@ -501,15 +501,26 @@ export function pickBoxSlot(type, lx, ly) {
   return best;
 }
 
+export const STAFF_ROLES = {
+  cashier: { name: 'レジ係', icon: '🧾', wage: 1500, desc: '空いているレジで会計をする' },
+  stocker: { name: '品出し係', icon: '📦', wage: 1800, desc: '値札のついた棚へ在庫から補充する（値札がないと働かない）' },
+  porter: { name: '倉庫係', icon: '🛒', wage: 1200, desc: '届いた箱を在庫棚へ運ぶ' },
+  cleaner: { name: 'ゴミ捨て係', icon: '🗑️', wage: 1000, desc: '空の段ボールをひたすらゴミ箱へ捨てる' },
+};
+
 // ---------- スキルボード ----------
-// 従業員の枠（最大10人）。番号が大きいほど足が速く仕事もはやい（その分お給料も少し高い）
-const SLOT_TITLES = ['のんびり', 'マイペース', 'おっとり', 'ふつう', 'しっかり', 'てきぱき', 'きびきび', 'はやわざ', 'スピードスター', 'エース'];
-const SLOT_ICONS = ['🐢', '🐌', '🐑', '🙂', '💪', '🏃', '⚡', '🚀', '🌪️', '👑'];
-const SLOT_LV = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12], SLOT_COST = [1, 1, 1, 2, 2, 2, 3, 3, 3, 4];
-const SLOT_POS = [[0, 1], [1, 1], [2, 1], [2, 2], [1, 2], [0, 2], [0, 3], [1, 3], [2, 3], [1, 4]];
-export const STAFF_SLOTS = SLOT_TITLES.map((title, i) => ({ no: i + 1, title, icon: SLOT_ICONS[i], spd: Math.round((0.5 + i * (1.5 / 9)) * 100) / 100, lv: SLOT_LV[i], cost: SLOT_COST[i], pos: SLOT_POS[i] }));
+// 従業員の枠（最大15人）。Lv5 から雇えて、Lv30 で15人目。番号が大きいほど足も仕事も速い（そのぶん日給も高い）
+const SLOT_TITLES = ['のんびり', 'マイペース', 'おっとり', 'ゆったり', 'ふつう', 'まじめ', 'しっかり', 'てきぱき', 'きびきび', 'ベテラン', 'はやわざ', 'スピードスター', 'たつじん', 'エース', '伝説の店員'];
+const SLOT_ICONS = ['🐢', '🐌', '🐑', '🐼', '🙂', '📘', '💪', '🏃', '⚡', '🎖️', '🚀', '🌪️', '🥷', '👑', '🌟'];
+const SLOT_LV = [5, 6, 7, 8, 10, 11, 13, 14, 16, 18, 20, 22, 24, 27, 30];
+const SLOT_COST = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4];
+// スキルボード上の並び（3列で折り返し）
+const SLOT_POS = [[0, 1], [1, 1], [2, 1], [2, 2], [1, 2], [0, 2], [0, 3], [1, 3], [2, 3], [2, 4], [1, 4], [0, 4], [0, 5], [1, 5], [2, 5]];
+export const STAFF_SLOTS = SLOT_TITLES.map((title, i) => ({ no: i + 1, title, icon: SLOT_ICONS[i], spd: Math.round((0.5 + i * (1.7 / 14)) * 100) / 100, lv: SLOT_LV[i], cost: SLOT_COST[i], pos: SLOT_POS[i] }));
 export const STAFF_MAX = STAFF_SLOTS.length;
-export const slotWage = (role, no) => Math.round(role.wage * (0.75 + 0.06 * (no - 1)) / 10) * 10;
+// 日給は能力（はやさ）に見合った額：はやさ50%の人は仕事の基本給の6割、100%で10割、220%で約2倍
+export const wageFor = (role, spd) => Math.round(role.wage * (0.2 + 0.8 * (spd || 1)) / 10) * 10;
+export const slotWage = (role, no) => wageFor(role, (STAFF_SLOTS[(no || 1) - 1] || STAFF_SLOTS[0]).spd);
 const S = (id, name, icon, cost, x, y, req, desc, branch) => ({ id, name, icon, cost, x, y, req, desc, branch });
 export const SKILL_BRANCHES = [['prod', '🛒 商品'], ['shop', '🏪 お店・設備'], ['staff', '🧑‍💼 従業員'], ['biz', '📈 経営']];
 export const ROOT_POS = { shop: [1, 0], staff: [1, 0], biz: [2, 0] };
@@ -560,7 +571,7 @@ export const SKILLS_LIST = [
   // 従業員
   // 従業員を雇える権限（1枠ずつ）。No.1 はのんびり、No.10 はとても速い
   ...STAFF_SLOTS.map((sl, i) => S('staff_h' + sl.no, `従業員 No.${sl.no}`, sl.icon, sl.cost, sl.pos[0], sl.pos[1], i ? ['staff_h' + (sl.no - 1)] : ['start'],
-    `「${sl.title}」な人を1人雇える（はやさ ${Math.round(sl.spd * 100)}%）`, 'staff')),
+    `「${sl.title}」な人を1人雇える（はやさ ${Math.round(sl.spd * 100)}%・日給 ${slotWage(STAFF_ROLES.cleaner, sl.no).toLocaleString()}〜${slotWage(STAFF_ROLES.stocker, sl.no).toLocaleString()}円）`, 'staff')),
   S('staff_speed', 'テキパキ研修', '⚡', 2, 3, 2, ['staff_h2'], '従業員みんなの動きが35%速くなる', 'staff'),
   S('staff_wage', '働き方改革', '💴', 3, 3, 3, ['staff_speed'], '人件費が25%安くなる', 'staff'),
   // 経営
@@ -577,24 +588,29 @@ export const SKILLS_LIST = [
 ];
 export const SKILLS = Object.fromEntries(SKILLS_LIST.map((s) => [s.id, s]));
 for (const sk of SKILLS_LIST) if (sk.branch === 'prod') { sk.prods = PRODUCTS_LIST.filter((p) => p.lic === sk.id).map((p) => p.id); }
-// 商品スキルは店のレベルが上がると解放できる（上の段ほど高いレベルが必要）
-const LV_BY_TIER = [1, 2, 3, 5, 7, 10, 13];
-const LV_OVERRIDE = { prod_premium: 6, prod_premium2: 12, prod_drink4: 8, prod_bakery3: 8 };
-for (const sk of SKILLS_LIST) if (sk.branch === 'prod') sk.lv = LV_OVERRIDE[sk.id] ?? LV_BY_TIER[Math.min(sk.y, LV_BY_TIER.length - 1)];
+// スキルは店のレベルが上がると解放できる。最大Lv30に合わせて、Lv1〜30にちりばめてある
+const LV_REQ = {
+  // 🛒 商品
+  prod_food1: 1, prod_food2: 2, prod_drink1: 2, prod_house1: 2, prod_produce1: 3, prod_chilled1: 4, prod_drink2: 4,
+  prod_food3: 5, prod_house2: 5, prod_produce2: 6, prod_bakery1: 6, prod_frozen1: 7, prod_chilled2: 7, prod_food4: 8,
+  prod_drink3: 9, prod_produce3: 10, prod_house3: 10, prod_bakery2: 11, prod_chilled3: 12, prod_frozen2: 13, prod_food5: 14,
+  prod_premium: 15, prod_produce4: 16, prod_drink4: 17, prod_chilled4: 18, prod_bakery3: 19, prod_frozen3: 21,
+  prod_produce5: 23, prod_frozen4: 25, prod_premium2: 28,
+  // 🏪 お店・設備
+  fx_shelf2: 3, fx_checkout2: 4, fx_deco: 6, fx_gondola: 8, fx_sign: 9, fx_rack2: 12, fx_shelf3: 15, fx_checkout3: 16, fx_selfreg: 20,
+  // 🧑‍💼 従業員（No.1〜15 は STAFF_SLOTS の lv）
+  staff_speed: 12, staff_wage: 19,
+  // 📈 経営
+  mk_ads: 3, mk_express: 5, mk_price: 7, mk_rep: 9, mk_recycle: 11, mk_bulk: 13, mk_scan: 14, mk_ads2: 21, mk_vip: 24, mk_hours: 26,
+};
+for (const sk of SKILLS_LIST) if (LV_REQ[sk.id]) sk.lv = LV_REQ[sk.id];
 for (const sl of STAFF_SLOTS) { const sk = SKILLS_LIST.find((k) => k.id === 'staff_h' + sl.no); if (sk) { sk.lv = sl.lv; sk.slot = sl.no; } }
-SKILLS_LIST.find((k) => k.id === 'staff_speed').lv = 4;
-SKILLS_LIST.find((k) => k.id === 'fx_checkout3').lv = 10;
-SKILLS_LIST.find((k) => k.id === 'fx_selfreg').lv = 20;
+// 前提スキルより低いレベルにならないようにそろえる
+for (let pass = 0; pass < 4; pass++) for (const sk of SKILLS_LIST) for (const r of sk.req) { const q = SKILLS_LIST.find((k) => k.id === r); if (q?.lv && (sk.lv || 0) < q.lv) sk.lv = q.lv; }
 // 旧ライセンス → 新しい商品ノード（セーブ移行用）
 export const OLD_LICENSES = { lic_drink: ['prod_drink1', 'prod_drink2'], lic_chilled: ['prod_chilled1', 'prod_chilled2'], lic_frozen: ['prod_frozen1', 'prod_frozen2'],
   lic_produce: ['prod_produce1', 'prod_produce2'], lic_bakery: ['prod_bakery1'], lic_house: ['prod_house1', 'prod_house2'], lic_premium: ['prod_premium'] };
 
-export const STAFF_ROLES = {
-  cashier: { name: 'レジ係', icon: '🧾', wage: 1500, desc: '空いているレジで会計をする' },
-  stocker: { name: '品出し係', icon: '📦', wage: 1800, desc: '値札のついた棚へ在庫から補充する（値札がないと働かない）' },
-  porter: { name: '倉庫係', icon: '🛒', wage: 1200, desc: '届いた箱を在庫棚へ運ぶ' },
-  cleaner: { name: 'ゴミ捨て係', icon: '🗑️', wage: 1000, desc: '空の段ボールをひたすらゴミ箱へ捨てる' },
-};
 export const TRASH_TYPES = ['trash', 'dumpster']; // 空き段ボールを捨てられる設備
 export const STAFF_NAMES = ['たなか', 'すずき', 'さとう', 'やまだ', 'こばやし', 'いとう', 'わたなべ', 'なかむら', 'かとう', 'よしだ', 'まつもと', 'いのうえ', 'きむら', 'はやし', 'しみず', 'もり', 'あべ', 'いけだ', 'はしもと', 'やまもと'];
 

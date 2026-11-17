@@ -204,13 +204,22 @@ export function audioCtx() {
   }
   return _ctx;
 }
-// iPhone の音の扱い：ふだんはゲームの中だけで鳴らす（ダイナミックアイランドやロック画面に出さない）
+// iPhone の音の扱い
+//  mix（ふつう）：'ambient' … Spotify などほかのアプリの音楽を止めずに、いっしょに鳴る。マナーモード中はゲームの音は鳴らない
+//  solo         ：'playback' … マナーモードでも鳴るが、ほかのアプリの音楽は止まる（iPhoneの仕組みで両方は選べない）
+// どちらもゲームの中だけで鳴らすので、ダイナミックアイランドやロック画面には出ない
+let _sessionType = null;
 function setSession(settings) {
   try {
     if (!navigator.audioSession) return;
-    navigator.audioSession.type = settings.silentPlay ? 'playback' : 'ambient';
+    const type = settings.soundMode === 'solo' ? 'playback' : 'ambient';
+    if (navigator.audioSession.type === type && _sessionType === type) return;
+    navigator.audioSession.type = type; _sessionType = type;
+    // 鳴っている途中で切り替えたときは、いったん止めて再開すると新しい鳴らし方になる
+    if (_ctx && _ctx.state === 'running') _ctx.suspend().then(() => (document.hidden ? null : _ctx.resume())).catch(() => {});
   } catch (e) { /* 未対応 */ }
 }
+export function applySoundMode(settings) { setSession(settings); }
 export class Music {
   constructor(settings) {
     this.settings = settings;

@@ -33,9 +33,9 @@ export class GameUI {
   bind(game) {
     this.g = game;
     this.openBtn.onclick = () => { const ph = game.store.phase; toast(ph === 'prep' ? '🪧 入口の看板をOPENにすると営業スタート！' : ph === 'open' ? '🪧 店じまいするときは入口の看板をCLOSEDに' : '⏳ 残りのお客さんの会計をしよう'); };
-    this.lv.onclick = () => this.openSkills();
-    this.rep.onclick = () => this.openPC('rep');
-    this.rep.style.cursor = 'pointer';
+    // スキル・評判などはマネージャー室のボードから（ここでは場所を教えるだけ）
+    this.lv.onclick = () => toast('🌟 スキルはマネージャー室の「フランチャイズボード」で解放できます', 'info');
+    this.rep.onclick = () => toast('💬 評判と口コミはマネージャー室の「マネージャーボード」で見られます', 'info');
   }
   updateHUD(dt, store, dyn, force) {
     this._hudT -= dt;
@@ -134,16 +134,19 @@ export class GameUI {
       } else if (tab === 'rep') {
         body.append(repPanel(st));
       } else if (tab === 'staff') {
-        // 従業員の枠 No.1〜10。スキルボードで枠を解放 → 好きな仕事を選んで雇う
+        // 従業員の枠 No.1〜15。スキルボードで枠を解放 → 好きな仕事を選んで雇う
         const lim = staffLimit(st.skills);
         const tagged = st.fixtures.reduce((n, f) => n + (f.s ? f.s.filter((x) => x[0]).length : 0), 0);
-        body.append(h('p', { class: 'muted small' }, `雇っている人 ${st.staff.length} / 解放した枠 ${lim}（最大${STAFF_MAX}人）。枠はスキルボードの「🧑‍💼 従業員」で Lv.2 から解放できます。番号が大きいほど足も仕事も速い人です。品出し係は値札のついた棚だけ補充します（値札のある段：${tagged}）。`));
-        const bar = (spd) => h('span', { class: 'spdbar' }, h('i', { style: { width: Math.round(spd / 2 * 100) + '%' } }));
+        const wageMul = st.skills.staff_wage ? 0.75 : 1, wages = Math.round(st.staff.reduce((t, o) => t + o.wage, 0) * wageMul);
+        body.append(h('div', { class: 'wage-total' }, `💴 人件費 1日 ${yen(wages)}`, h('span', { class: 'muted small' }, `（${st.staff.length}人分・閉店のときに払います${st.skills.staff_wage ? '・働き方改革で25%引き' : ''}）`)),
+          h('p', { class: 'muted small' }, `雇っている人 ${st.staff.length} / 解放した枠 ${lim}（最大${STAFF_MAX}人）。枠はスキルボードの「🧑‍💼 従業員」で お店Lv.5 から解放でき、Lv.30 で15人目。番号が大きいほど足も仕事も速く、そのぶん日給も高い人です。品出し係は値札のついた棚だけ補充します（値札のある段：${tagged}）。`));
+        const bar = (spd) => h('span', { class: 'spdbar' }, h('i', { style: { width: Math.round(spd / 2.2 * 100) + '%' } }));
         const r = mulberry32(st.day * 7919 + st.staff.length * 31);
         for (const sl of STAFF_SLOTS) {
           const s = st.staff.find((o) => o.slot === sl.no);
           const open = !!st.skills['staff_h' + sl.no];
-          const head = h('div', { class: 'slot-h' }, h('b', {}, `${sl.icon} No.${sl.no}「${sl.title}」`), h('span', { class: 'muted small' }, `はやさ ${Math.round(sl.spd * 100)}%`), bar(sl.spd));
+          const spd = s?.spd || sl.spd;
+          const head = h('div', { class: 'slot-h' }, h('b', {}, `${sl.icon} No.${sl.no}「${sl.title}」`), h('span', { class: 'muted small' }, `はやさ ${Math.round(spd * 100)}%`), bar(spd));
           if (s) {
             const R = STAFF_ROLES[s.role] || STAFF_ROLES.stocker;
             body.append(h('div', { class: 'scard' }, head,
@@ -310,9 +313,7 @@ export class GameUI {
     const m = modal('⏸ メニュー', [
       h('div', { class: 'col' },
         h('button', { class: 'btn big', onclick: () => m.close() }, '▶ 再開'),
-        h('button', { class: 'btn', onclick: () => { m.close(); this.openPC('order'); } }, '📋 発注・管理'),
-        h('button', { class: 'btn', onclick: () => { m.close(); this.openExpand(); } }, '🗺️ 店舗拡張'),
-        h('button', { class: 'btn', onclick: () => { m.close(); this.openSkills(); } }, '🌟 スキルボード'),
+        h('div', { class: 'muted small', style: { textAlign: 'center' } }, '📋 発注・従業員・評判・🌟 スキル・🗺️ 店舗拡張は、マネージャー室（倉庫のいちばん奥）のボードの前でできます'),
         h('button', { class: 'btn ghost', onclick: () => { m.close(); g.app.openSettingsInGame(); } }, '⚙️ 設定'),
         h('button', { class: 'btn ghost', onclick: () => { m.close(); g.help(); } }, '❓ 遊び方'),
         g.roomId ? h('div', { class: 'chip' }, `ルームID：${g.roomId}`) : null,

@@ -1,7 +1,7 @@
 // ===== キャラクター（キャラメイク対応・被り物たくさん） =====
 import * as THREE from 'three';
 import { faceTexture, eyeTexture, nameTexture, bubbleTexture, canvasTex, emoji, shade, surf } from '../textures.js';
-import { mat, smat, glassMat, T, box, rbox, cyl, sph, plane, torus, cone, bakeGroup, M, vcolor } from './geo.js';
+import { mat, smat, glassMat, T, box, rbox, cyl, sph, plane, torus, cone, bakeGroup, M, vcolor, merge } from './geo.js';
 import { mulberry32 } from '../util.js';
 
 export const SKINS = ['#ffe0c4', '#f8cfa8', '#f1b98c', '#d99b6c', '#b87a4b', '#8d5a36', '#6b4226', '#ffd6e8'];
@@ -161,6 +161,15 @@ function jerseyTex(c) { return (tc['jer' + c] ||= canvasTex(128, 128, (g, w, h) 
 export const EYE_COLORS = ['#5b3a24', '#2b1d16', '#3a6ea5', '#3f8f5a', '#8a6a3a', '#6b6b6b', '#8e44ad', '#c0392b'];
 const LIDS = { dot: 0.32, round: 0.22, happy: 0.6, sleepy: 0.56, sparkle: 0.24, wink: 0.32, angry: 0.44, cool: 0.47 };
 const capsule = (r, len, cs = 4, rs = 10) => new THREE.CapsuleGeometry(r, len, cs, rs);
+// 先細りの手足（上の太さ・ふくらみ・下の太さ）。カプセルの代わりに使うと筋肉のついた自然な形になる
+function limb(rTop, rMid, rBot, len, midAt = 0.35, rs = 12) {
+  const h = len / 2, pts = [];
+  const cap = (r, cy, from, to, n) => { for (let i = 0; i <= n; i++) { const a = from + (to - from) * i / n; pts.push(new THREE.Vector2(Math.max(1e-4, Math.cos(a) * r), cy + Math.sin(a) * r)); } };
+  cap(rBot, -h, -Math.PI / 2, 0, 4);
+  pts.push(new THREE.Vector2(rMid, h - len * midAt));
+  cap(rTop, h, 0, Math.PI / 2, 4);
+  return new THREE.LatheGeometry(pts, rs);
+}
 export class Character {
   constructor(av, { lite = false, small = false, uniform = null } = {}) {
     this.av = sanitizeAvatar(av);
@@ -195,18 +204,27 @@ export class Character {
     for (const [side, sx] of [['L', -1], ['R', 1]]) {
       const th = this._pv('thigh' + side, this.body, sx * 0.095, 0.93, 0);
       const legMat = av.bottom === 'skirt' || av.top === 'dress' ? skin : pants;
-      A(th, capsule(0.066, 0.3), legMat, 0, -0.21, 0);
-      if (av.bottom === 'shorts') A(th, T(cyl(0.074, 0.08, 0.26, 12, true), 0, -0.27), pants);
+      const bareThigh = legMat === skin || av.bottom === 'shorts';
+      A(th, bareThigh ? limb(0.07, 0.066, 0.052, 0.3, 0.3) : limb(0.074, 0.072, 0.06, 0.3, 0.3), legMat, 0, -0.21, 0);
+      if (av.bottom === 'shorts') { A(th, T(cyl(0.08, 0.086, 0.24, 12, true), 0, -0.25), pants); A(th, T(torus(0.086, 0.006, 5, 14), 0, -0.25, 0, Math.PI / 2), C(shade(pantsC, -0.12), { r: 0.85 })); }
       const kn = this._pv('knee' + side, this[`thigh${side}`], 0, -0.43, 0);
-      const shinMat = av.bottom === 'pants' || av.top === 'overalls' ? pants : skin;
-      A(kn, capsule(0.052, 0.3), shinMat, 0, -0.2, 0);
-      A(kn, T(rbox(0.105, 0.07, 0.25, 0.03), 0, -0.49, 0.045), shoe);
-      A(kn, T(rbox(0.11, 0.02, 0.26, 0.008), 0, -0.5, 0.045), sole);
+      const longPants = av.bottom === 'pants' || av.top === 'overalls';
+      const shinMat = longPants ? pants : skin;
+      // ズボンはまっすぐ、素足はふくらはぎのふくらみ
+      A(kn, longPants ? limb(0.062, 0.06, 0.055, 0.38, 0.3) : limb(0.054, 0.06, 0.036, 0.38, 0.28), shinMat, 0, -0.235, 0);
+      if (longPants && !small) A(kn, T(torus(0.054, 0.005, 5, 14), 0, -0.43, 0, Math.PI / 2), C(shade(pantsC, -0.12), { r: 0.9 })); // すその折り返し
+      if (!longPants && !small) A(kn, T(cyl(0.04, 0.042, 0.035, 12, true), 0, -0.455), C(av.shoeColor === '#ffffff' ? '#e8e8e8' : '#f4f4f4', { r: 0.9 })); // くつした
+      // 足首から先（くつ）は足首の関節につける
+      const an = this._pv('ankle' + side, this['knee' + side], 0, -0.45, 0);
+      A(an, T(rbox(0.105, 0.07, 0.25, 0.03), 0, -0.04, 0.045), shoe);
+      A(an, T(rbox(0.11, 0.02, 0.26, 0.008), 0, -0.05, 0.045), sole);
+      A(an, T(rbox(0.104, 0.024, 0.07, 0.01), 0, -0.048, -0.045), sole); // かかと
       if (!small) {
-        A(kn, T(sph(0.054, 12, 8), 0, -0.47, 0.13, 0, 0, 0, 1, 0.62, 1.1), shoe); // つま先の丸み
-        A(kn, T(rbox(0.07, 0.012, 0.09, 0.004), 0, -0.433, 0.07, -0.25), C(shade(av.shoeColor, -0.12), { r: 0.6 })); // ベロ
-        for (let i = 0; i < 3; i++) A(kn, T(box(0.06, 0.005, 0.008), 0, -0.44 - i * 0.006, 0.05 + i * 0.026, -0.25), C('#f4f4f4', { r: 0.7 })); // くつひも
-        A(kn, T(cyl(0.056, 0.056, 0.012, 14, true), 0, -0.45, 0.005, 0, 0, 0, 1, 1, 1.05), shoe);
+        A(an, T(sph(0.054, 12, 8), 0, -0.02, 0.13, 0, 0, 0, 1, 0.62, 1.1), shoe); // つま先の丸み
+        A(an, T(rbox(0.07, 0.012, 0.09, 0.004), 0, 0.017, 0.07, -0.25), C(shade(av.shoeColor, -0.12), { r: 0.6 })); // ベロ
+        for (let i = 0; i < 3; i++) A(an, T(box(0.06, 0.005, 0.008), 0, 0.01 - i * 0.006, 0.05 + i * 0.026, -0.25), C('#f4f4f4', { r: 0.7 })); // くつひも
+        A(an, T(cyl(0.056, 0.056, 0.012, 14, true), 0, 0, 0.005, 0, 0, 0, 1, 1, 1.05), shoe);
+        A(an, T(box(0.112, 0.008, 0.2), 0, -0.033, 0.06), C(shade(av.shoeColor, -0.2), { r: 0.6 })); // くつの縫い目
       }
     }
     // 胴体（回転体で胸・腰のくびれ）
@@ -216,6 +234,14 @@ export class Character {
     A(P, tg, torsoMat);
     const pv = new THREE.LatheGeometry([[0, -0.05], [0.142, -0.04], [0.16, 0.02], [0.15, 0.1], [0, 0.11]].map(([x, y]) => new THREE.Vector2(x, y)), 18, 0); pv.scale(1, 1, 0.66);
     A(P, pv, av.top === 'dress' ? cloth : pants);
+    for (const s of [-1, 1]) A(P, T(sph(0.07, 14, 8), s * 0.128, 0.462, -0.004, 0, 0, -s * 0.32, 1.5, 0.52, 0.86), torsoMat); // 首から肩へのライン
+    if (av.top !== 'dress' && av.bottom !== 'skirt') for (const s of [-1, 1]) A(P, T(sph(0.074, 12, 8), s * 0.064, -0.012, -0.058, 0, 0, 0, 1, 0.95, 0.8), pants); // おしり
+    if (['tshirt', 'stripe', 'jersey', 'hoodie'].includes(av.top) || !av.top) A(P, T(cyl(0.16, 0.168, 0.07, 18, true), 0, 0.045, 0, 0, 0, 0, 1, 1, 0.68), torsoMat); // シャツのすそ
+    if (av.top !== 'dress' && av.bottom !== 'skirt' && !small) {
+      const seam = C(shade(pantsC, -0.16), { r: 0.9 });
+      for (const s of [-1, 1]) A(P, T(box(0.05, 0.004, 0.004), s * 0.1, 0.035, 0.1, 0, s * 0.5, s * 0.55), seam); // ポケットの口
+      A(P, T(box(0.004, 0.07, 0.004), 0.012, 0.0, 0.106), seam); // 前の縫い目
+    }
     if (av.bottom === 'skirt' || av.top === 'dress') A(P, new THREE.LatheGeometry([[0.255, -0.36], [0.262, -0.34], [0.205, -0.12], [0.152, 0.06]].map(([x, y]) => new THREE.Vector2(x, y)), 20, 0), mat(av.top === 'dress' ? topC : pantsC, { r: 0.85, side: THREE.DoubleSide }));
     if (av.top !== 'dress') A(P, T(cyl(0.152, 0.152, 0.04, 18, true), 0, 0.07, 0, 0, 0, 0, 1, 1, 0.66), C('#3b2f2a', { r: 0.5 }));
     if (av.top !== 'dress' && !small) { A(P, T(rbox(0.045, 0.034, 0.01, 0.004), 0, 0.073, 0.1), C('#c9a227', { r: 0.25, m: 0.85 })); for (const s of [-1, 1]) A(P, T(box(0.012, 0.05, 0.006), s * 0.07, 0.065, 0.098), C('#3b2f2a', { r: 0.5 })); }
@@ -231,10 +257,10 @@ export class Character {
     for (const [side, sx] of [['L', -1], ['R', 1]]) {
       const sh = this._pv('shoulder' + side, this.torso, sx * 0.205, 0.44, 0);
       A(sh, sph(0.058, 12, 8), sleeveMat, 0, -0.01, 0);
-      A(sh, capsule(0.044, 0.18), longSleeve ? sleeveMat : skin, 0, -0.14, 0);
+      A(sh, limb(0.05, 0.048, 0.039, 0.18, 0.38), longSleeve ? sleeveMat : skin, 0, -0.14, 0);
       if (!longSleeve) { A(sh, T(cyl(0.056, 0.052, 0.12, 12, true), 0, -0.12), sleeveMat); A(sh, T(torus(0.053, 0.007, 5, 14), 0, -0.12, 0, Math.PI / 2), C(shade(topC, -0.1), { r: 0.85 })); }
       const el = this._pv('elbow' + side, this['shoulder' + side], 0, -0.27, 0);
-      A(el, capsule(0.037, 0.17), longSleeve ? sleeveMat : skin, 0, -0.12, 0);
+      A(el, limb(0.041, 0.042, 0.029, 0.18, 0.3), longSleeve ? sleeveMat : skin, 0, -0.125, 0);
       if (longSleeve) A(el, T(cyl(0.041, 0.041, 0.03, 10), 0, -0.235), sleeveMat);
       if (small) {
         A(el, T(sph(0.042, 10, 8), 0, -0.27, 0.005, 0, 0, 0, 0.75, 1.15, 0.55), skin);
@@ -258,7 +284,8 @@ export class Character {
     const coversHead = ['pumpkin', 'paperbag'].includes(av.hat);
     if (!coversHead) {
       A(hg, sph(R, small ? 22 : 30, small ? 16 : 22), mat('#ffffff', { map: faceTexture(av, small), r: 0.55 }));
-      for (const s of [-1, 1]) A(hg, T(sph(0.055, 8, 6), s * R * 0.96, -0.01, -0.01, 0, 0, 0, 0.38, 1, 0.66), skin);
+      for (const s of [-1, 1]) A(hg, T(sph(0.055, 10, 8), s * R * 0.96, -0.01, -0.01, 0, 0, 0, 0.38, 1, 0.66), skin);
+      if (!small) for (const s of [-1, 1]) A(hg, T(sph(0.03, 8, 6), s * 0.262, -0.012, -0.004, 0, 0, 0, 0.2, 0.72, 0.5), C(shade(av.skin, -0.14), { r: 0.6 })); // 耳の中のくぼみ
       // 目（立体の目玉＋まぶた）
       const eyeM = mat('#ffffff', { map: eyeTexture(av.eyeColor || '#5b3a24', av.eyes === 'sparkle'), r: 0.15 });
       for (const s of [-1, 1]) {
@@ -287,6 +314,13 @@ export class Character {
     const keep = [];
     try { buildHat(hg, av, keep); } catch (e) { console.warn('hat', av.hat, e); }
     for (const k2 of keep) hg.remove(k2);
+    // まばたき用のまぶた（ふだんは隠しておき、ときどき一瞬だけ出す）
+    let blinkLids = null;
+    if (!coversHead && !this.lite && !small) {
+      const gs = [-1, 1].map((s) => { const g = new THREE.SphereGeometry(0.0468, 14, 10); g.translate(s * 0.085, 0.03, 0.198); return g; });
+      blinkLids = M(merge(gs), C(av.skin, { r: 0.55 }), false);
+      blinkLids.visible = false;
+    }
     // 頭の部品は neck の parts へ移す
     this.parts.neck.add(hg);
     // 部位ごとに結合（単色は頂点カラーでまとめる）
@@ -299,6 +333,10 @@ export class Character {
     for (const k2 of keep) {
       const holder = new THREE.Group(); holder.position.copy(hg.position); holder.scale.copy(hg.scale);
       holder.add(k2); this.neck.add(holder); if (k2.userData.spin) this.spin.push(k2);
+    }
+    if (blinkLids) {
+      const holder = new THREE.Group(); holder.position.copy(hg.position); holder.scale.copy(hg.scale);
+      holder.add(blinkLids); this.neck.add(holder); this.blink = blinkLids; this.blinkT = 1 + Math.random() * 3;
     }
     this.head = this.neck;
     this.armL = this.elbowL; this.armR = this.elbowR; // かご・荷物の取り付け先
@@ -337,8 +375,11 @@ export class Character {
     to(this.thighL, 'x', -s * 0.55); to(this.thighR, 'x', s * 0.55);
     to(this.kneeL, 'x', walk ? 0.08 + Math.max(0, Math.sin(this.phase - 1.1)) * 0.95 : 0.04);
     to(this.kneeR, 'x', walk ? 0.08 + Math.max(0, Math.sin(this.phase + Math.PI - 1.1)) * 0.95 : 0.04);
+    // 足首：前に出した足はつま先が上がり、けり出す足はつま先が下がる
+    if (this.ankleL) { to(this.ankleL, 'x', walk ? Math.sin(this.phase - 0.35) * 0.24 : 0); to(this.ankleR, 'x', walk ? -Math.sin(this.phase - 0.35) * 0.24 : 0); }
     // 腕
-    let sl = s * 0.42, sr = -s * 0.42, el = -0.22, er = -0.22, zl = -0.07, zr = 0.07;
+    // 前にふる腕はひじが少し曲がる
+    let sl = s * 0.42, sr = -s * 0.42, el = -0.2 - Math.max(0, -s) * 0.28, er = -0.2 - Math.max(0, s) * 0.28, zl = -0.07, zr = 0.07;
     if (!walk) { const b = Math.sin(this.t * 1.5) * 0.03; sl = b; sr = -b; el = -0.12; er = -0.12; }
     if (this.carry) { sl = sr = -1.05; el = er = -0.75; zl = 0.18; zr = -0.18; }
     else if (a === 'reach') { sr = -1.4 + Math.sin(this.t * 6) * 0.2; er = -0.25; sl = -0.15; }
@@ -349,6 +390,12 @@ export class Character {
     // 体
     this.body.position.y = walk ? Math.abs(Math.cos(this.phase)) * 0.028 : Math.sin(this.t * 2) * 0.004;
     to(this.torso, 'y', s * 0.07); to(this.torso, 'x', walk ? 0.04 : 0);
+    to(this.torso, 'z', walk ? Math.sin(this.phase) * 0.022 : Math.sin(this.t * 0.45) * 0.01); // 体重の移動で少し左右にゆれる
+    this.torso.scale.y = 1 + (walk ? 0 : Math.sin(this.t * 1.7) * 0.006); // 呼吸
+    if (this.blink) {
+      this.blinkT -= dt;
+      if (this.blinkT <= 0) { this.blink.visible = true; if (this.blinkT <= -0.11) { this.blink.visible = false; this.blinkT = 2 + Math.random() * 4.5; } }
+    }
     to(this.neck, 'y', !walk && a === 'idle' ? Math.sin(this.t * 0.7) * 0.2 : -s * 0.05);
     for (const sp of this.spin) sp.rotation.y += dt * 14;
   }

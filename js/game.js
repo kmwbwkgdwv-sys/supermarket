@@ -104,7 +104,7 @@ export class Game {
       }
       case 'levelup':
         toast(e.max ? `👑 最高レベル Lv.${e.level} に到達！（SP+${e.sp || 1}）` : `🎉 レベルアップ！ Lv.${e.level}（SP+${e.sp || 1}）${this.room ? '　SPはルームのみんなで共有' : ''}`, 'level', 3500);
-        if (e.prods?.length) setTimeout(() => toast(`🆕 新しい商品をスキルボードで解放できるようになりました：${e.prods.join('・')}`, 'ok', 5000), 1200);
+        if (e.prods?.length) setTimeout(() => toast(`🆕 スキルボードで新しく解放できるようになりました：${e.prods.join("・")}`, "ok", 5000), 1200);
         break;
       case 'summary': this.ui.closeAll(); this.ui.showSummary(e.data, this.mode !== 'client'); this.leaveRegister(true); if (this.sim) this.app.saveGame(true); break;
       case 'newday': {
@@ -351,7 +351,7 @@ export class Game {
     }
     if (f.t === 'opensign') return Object.assign(A, this._signAction(st));
     if (f.t === 'checkout') { A.act = { label: 'レジに入る', fn: () => this.enterRegister(f.id) }; A.info = '🧾 レジカウンター'; return A; }
-    if (f.t === 'pc' || f.t === 'mboard') { A.act = { label: '発注・管理', fn: () => this.ui.openPC('order') }; A.info = '📋 マネージャーボード：発注・値段・従業員・お店'; return A; }
+    if (f.t === 'pc' || f.t === 'mboard') { A.act = { label: '発注・管理', fn: () => this.ui.openPC('order') }; A.info = '📋 マネージャーボード：発注・従業員・評判・お店'; return A; }
     if (f.t === 'fboard') { A.act = { label: 'スキル', fn: () => this.ui.openSkills() }; A.info = '🌟 フランチャイズボード'; return A; }
     if (f.t === 'xboard') { A.act = { label: '店舗拡張', fn: () => this.ui.openExpand() }; A.info = '🗺️ 売り場・倉庫を買い足す'; return A; }
     if (f.t === 'recycle') { A.info = '♻️ 空き箱を入れるとお金になる'; A.hint = '空き箱を持ってくるとリサイクルできます'; return A; }

@@ -9,7 +9,7 @@ const SKEY = 'martmates.settings.v1';
 export const DEFAULT_SETTINGS = {
   lite: false, ultra: false, shadows: true, res: 1, fov: 70,
   sens: 1, invertY: false, btnScale: 1, layout: {}, touchUI: 'auto', cam: 'first',
-  bgm: 'pop', bgmVol: 0.6, sfxVol: 0.8, bgPlay: false, silentPlay: false, names: true,
+  bgm: 'pop', bgmVol: 0.6, sfxVol: 0.8, bgPlay: false, silentPlay: false, soundMode: 'mix', names: true,
 };
 
 function ls() { try { return window.localStorage; } catch (e) { return null; } }
@@ -29,6 +29,9 @@ export function loadSettings() {
   if (!s.__fp) { out.cam = 'first'; out.__fp = true; }
   // v6.6：BGM はふだんゲームの中だけで鳴らす（ダイナミックアイランドに出さない）。一度だけオフに戻す
   out.bgPlay = false; out.__island = true; // バックグラウンド再生はしない（常にオフ）
+  // v6.9：Spotify などほかのアプリの音楽と一緒に鳴らすのがふつうに（一度だけ切り替え）
+  if (!s.__mix) { out.soundMode = 'mix'; out.silentPlay = false; out.__mix = true; }
+  out.silentPlay = out.soundMode === 'solo';
   return out;
 }
 export function saveSettings(s) { try { ls()?.setItem(SKEY, JSON.stringify(s)); } catch (e) { /* noop */ } }

@@ -4,14 +4,14 @@ import {
   OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, BACK_Z, STOCK_Z, OLD_BACK_Z, OLD_STOCK_Z,
   getWalls, zones, keepClear, expandTargets, fixtureFootprint, marketPrice, marketCost, OLD_LICENSES, slotCapacity, slotAccess, rackAccess, checkoutSpot, canPlace,
   staffLimit, STAFF_SLOTS, slotWage, staffSlotOpen, checkoutLimit, closeTime, xpNeed, costMult, productUnlocked, fixtureUnlocked, localToWorld, CELL, TRASH_TYPES, ORDER_MAX_BOXES, SHIPPING_FEE,
-  MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits,
+  MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits, wageFor, MANAGER,
 } from './data.js';
 import { NavGrid } from './nav.js';
 import { rand, randi, pick, dist, dist2, clamp } from './util.js';
 
 export function newStore(name) {
   const st = {
-    v: 10, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
+    v: 11, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
     skills: { start: true, prod_food1: true }, prices: {}, market: {}, marketPrev: {}, staff: [], nid: 100, phase: 'prep', time: OPEN_TIME,
     totalSales: 0, totalCustomers: 0, rev: 1, created: Date.now(), color: '#ff6b35',
     today: { sales: 0, served: 0, lost: 0, orders: 0, ship: 0, xp: 0, vend: 0, recycle: 0 },
@@ -172,6 +172,11 @@ export function normalizeStore(st) {
     if ((st.level || 1) > MAX_LEVEL) { st.level = MAX_LEVEL; st.xp = 0; }
     st.v = 10;
   }
+  if (st.v < 11) {
+    // v11：従業員は最大15人に。日給は能力（はやさ）に見合った額に。今いる人のはやさはそのまま
+    for (const o of st.staff || []) { o.spd ||= STAFF_SLOTS[(o.slot || 1) - 1]?.spd || 1; o.wage = wageFor(STAFF_ROLES[o.role] || STAFF_ROLES.stocker, o.spd); }
+    st.v = 11;
+  }
   delete st._fresh;
   st.reviews ||= [];
   if (st.level >= MAX_LEVEL) st.xp = 0;
@@ -218,6 +223,15 @@ export class Sim {
   ev(e) { this.events.push(e); }
   toast(to, msg, kind = 'info') { this.ev({ t: 'toast', to, msg, kind }); }
   err(to, msg) { this.ev({ t: 'toast', to, msg, kind: 'err' }); this.ev({ t: 'sfx', s: 'err', to }); }
+  // 発注・スキル・従業員・拡張などは、マネージャー室（パソコン室）のボードの前でしかできない
+  atBoard(uid) {
+    if (this.requireBoard === false) return true;
+    const p = this.players[uid];
+    if (!p) return false;
+    const m = 0.8;
+    if (p.x > MANAGER.x0 - m && p.x < MANAGER.x1 + m && p.z > MANAGER.z0 - m && p.z < MANAGER.z1 + m) return true;
+    return this.store.fixtures.some((f) => BOARD_TYPES.includes(f.t) && dist(p.x, p.z, f.x, f.z) < 3.2);
+  }
   sfx(s, x, z) { this.ev({ t: 'sfx', s, x, z }); }
   fx(id) { return this.store.fixtures.find((f) => f.id === id); }
   box(id) { return this.store.boxes.find((b) => b.id === id); }
@@ -328,12 +342,14 @@ export class Sim {
     this.bump();
   }
   a_priceAll(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     const k = +a.k || 1;
     for (const p of PRODUCTS_LIST) { if (!productUnlocked(p.id, this.store.skills)) continue; if (k === 1) delete this.store.prices[p.id]; else this.store.prices[p.id] = Math.max(1, Math.round(marketPrice(this.store, p.id) * k / 10) * 10 - 2); }
     this.toast(uid, k === 1 ? '全商品を相場どおりにしました' : `全商品を相場の${Math.round(k * 100)}%にしました`, 'ok');
     this.bump();
   }
   a_order(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     const items = (a.items || []).filter(([p, n]) => PRODUCTS[p] && n > 0 && productUnlocked(p, this.store.skills)).map(([p, n, half]) => [p, Math.min(ORDER_MAX_BOXES, n | 0), half ? 1 : 0]);
     if (!items.length) return;
     const boxes = items.reduce((t, [, n]) => t + n, 0);
@@ -391,11 +407,13 @@ export class Sim {
     this.bump();
   }
   a_storeName(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     this.store.name = String(a.v || '').slice(0, 16) || 'マートメイツ';
     if (a.c) this.store.color = String(a.c).slice(0, 9);
     this.bump();
   }
   a_expand(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     const st = this.store, t = expandTargets(st).find((x) => x.id === a.id);
     if (!t) return;
     if (!t.can) return this.err(uid, t.kind === 'bay' ? '買ってある売り場のとなりから広げてください' : '使っている倉庫のとなりから広げてください');
@@ -455,6 +473,7 @@ export class Sim {
     }
   }
   a_skill(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     const sk = SKILLS[a.id], st = this.store;
     if (!sk || st.skills[sk.id]) return;
     if (!sk.req.every((r) => st.skills[r])) return this.err(uid, '前のスキルを先に解放してください');
@@ -467,9 +486,10 @@ export class Sim {
     this.sfx('levelup'); this.bump();
   }
   a_hire(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     const st = this.store, role = STAFF_ROLES[a.role];
     if (!role) return;
-    // どの枠（No.1〜10）の人を雇うか。指定がなければ空いている一番若い番号
+    // どの枠（No.1〜15）の人を雇うか。指定がなければ空いている一番若い番号
     const used = new Set(st.staff.map((o) => o.slot));
     const no = a.slot ? a.slot | 0 : (STAFF_SLOTS.find((sl) => staffSlotOpen(st.skills, sl.no) && !used.has(sl.no))?.no || 0);
     const sl = STAFF_SLOTS.find((o) => o.no === no);
@@ -478,15 +498,16 @@ export class Sim {
     const seed = (a.seed >>> 0) || randi(1, 1e9);
     const s = { id: st.nid++, role: a.role, name: String(a.name || pick(STAFF_NAMES)).slice(0, 10), seed, slot: no, spd: sl.spd, wage: slotWage(role, no) };
     st.staff.push(s);
-    this.toast(null, `No.${no}「${sl.title}」な${s.name}さんを${role.name}として雇いました！`, 'ok');
+    this.toast(null, `No.${no}「${sl.title}」な${s.name}さんを${role.name}として雇いました！（日給 ¥${s.wage.toLocaleString()}）`, 'ok');
     this.sfx('bell'); this.bump();
   }
   // 従業員の仕事を変える
   a_staffRole(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     const st = this.store, s = st.staff.find((o) => o.id === a.sid), role = STAFF_ROLES[a.role];
     if (!s || !role || s.role === a.role) return;
     this.releaseStaff(s);
-    s.role = a.role; s.wage = slotWage(role, s.slot || 1);
+    s.role = a.role; s.wage = wageFor(role, s.spd || STAFF_SLOTS[(s.slot || 1) - 1]?.spd);
     this.toast(null, `${s.name}さんを${role.name}にしました`, 'ok');
     this.bump();
   }
@@ -498,6 +519,7 @@ export class Sim {
     if (rt) { rt.st = 'idle'; rt.t = 0.5; rt.path = null; rt.bid = null; rt.fid = null; rt.msg = null; }
   }
   a_fire(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     const st = this.store, s = st.staff.find((o) => o.id === a.sid);
     if (!s) return;
     const who = 's:' + s.id;
@@ -1188,6 +1210,8 @@ export function cashGiven(total) {
 }
 // 送料こみの支払い額
 // 来店の勢い：レベル・売り場の広さ・評判・広告。ゲーム画面の評判タブにも出す
+const BOARD_TYPES = ['mboard', 'fboard', 'xboard', 'pc'];
+const BOARD_ONLY = '📋 マネージャー室のボードの前で操作してください';
 export function customerFactors(st) {
   const bays = Math.max(1, Object.keys(st.bays || {}).length);
   return {
