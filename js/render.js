@@ -6,8 +6,8 @@ import { buildFixture, getBeltTex } from './models/fixtures.js';
 import { productParts, productMesh } from './models/products.js';
 import { Character, randomAvatar } from './models/character.js';
 import { World } from './models/world.js';
-import { bakeGroup, mat, setLiteMaterials, Q } from './models/geo.js';
-import { boxAtlas, priceTagTexture, setAniso, setTexQuality, tex, canvasTex, rr, FONT } from './textures.js';
+import { bakeGroup, mat, smat, setLiteMaterials, Q, rbox, box, plane } from './models/geo.js';
+import { boxAtlas, priceTagTexture, setAniso, setTexQuality, tex, canvasTex, rr, FONT, surf, emoji } from './textures.js';
 import { angleLerp, lerp } from './util.js';
 import { getPrice, priceLimit } from './sim.js';
 
@@ -210,11 +210,24 @@ export class Renderer {
       this.resize();
     } catch (e) { console.warn('高画質エフェクトを使えません', e); this.composer = null; }
   }
+  // 画面の大きさ：実際に表示されている canvas の大きさに合わせる（縦横比がずれると引き伸ばされて見える）
+  _viewSize() {
+    const c = this.r.domElement;
+    const cw = Number(c?.clientWidth), ch = Number(c?.clientHeight);
+    const w = cw > 0 ? cw : window.innerWidth, h = ch > 0 ? ch : window.innerHeight;
+    return [Math.max(1, Math.round(w)), Math.max(1, Math.round(h))];
+  }
   resize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const [w, h] = this._viewSize();
+    this._vw = w; this._vh = h;
     this.r.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
     if (this.composer) { this.composer.setPixelRatio(Math.min(this.dpr || 1, 1.5)); this.composer.setSize(w, h); }
+  }
+  // 毎フレーム確認：スマホを回したときなど、resize の知らせが来なかったり古い大きさだったりしても直す
+  _fit() {
+    const [w, h] = this._viewSize();
+    if (w !== this._vw || h !== this._vh) this.resize();
   }
 
   // ---------- 時間帯の光 ----------
@@ -389,6 +402,75 @@ export class Renderer {
     }
     this.boxes.end(); this.boxItems.end();
     if (!fpOn && this.fpHands) this.fpHands.visible = false;
+  }
+  // ---------- 大きい段ボール（買った設備が入っている） ----------
+  _crateModel(ft) {
+    const def = FIXTURES[ft] || {};
+    const big = (def.w || 1) >= 1;
+    const [w, h, d] = big ? [1.2, 0.9, 0.8] : [0.75, 0.6, 0.6];
+    const g = new THREE.Group();
+    const card = smat(surf('cardboard'), 0xffffff, { r: 0.9 });
+    g.add(new THREE.Mesh(rbox(w, h, d, 0.02), card));
+    const tape = mat(0xc9a46c, { r: 0.35 });
+    g.add(new THREE.Mesh(box(0.16, 0.004, d + 0.01).translate(0, h, 0), tape));
+    for (const s of [-1, 1]) g.add(new THREE.Mesh(box(0.16, 0.22, 0.004).translate(0, h - 0.22, s * (d / 2 + 0.002)), tape));
+    // ラベル（設備のアイコンと名前）
+    const label = (this._crateTex ||= {})[ft] ||= canvasTex(256, 128, (c, W, H) => {
+      c.fillStyle = '#fffdf6'; rr(c, 4, 4, W - 8, H - 8, 14); c.fill();
+      c.strokeStyle = '#d8c7a8'; c.lineWidth = 4; c.stroke();
+      emoji(c, def.icon || '📦', 52, H / 2, 70);
+      c.fillStyle = '#3a2a1a'; c.font = `900 ${def.name && def.name.length > 6 ? 24 : 30}px ${FONT}`; c.textBaseline = 'middle'; c.fillText(def.name || '設備', 100, H / 2 - 12, W - 108);
+      c.fillStyle = '#9b6b3a'; c.font = `800 18px ${FONT}`; c.fillText('取扱注意 ↑', 100, H / 2 + 24);
+    });
+    const lm = new THREE.MeshStandardMaterial({ map: label, roughness: 0.8 });
+    const lw = Math.min(w * 0.7, 0.62), lh = lw / 2;
+    for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(lw, lh), lm); p.position.set(0, h * 0.42, s * (d / 2 + 0.007)); if (s < 0) p.rotation.y = Math.PI; g.add(p); }
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = !this.lite; o.receiveShadow = true; } });
+    g.userData.size = [w, h, d];
+    return g;
+  }
+  syncCrates(store, holders, fp) {
+    if (!this.crateRoot) { this.crateRoot = new THREE.Group(); this.crateRoot.name = 'crates'; this.scene.add(this.crateRoot); this.crateViews = new Map(); this._fallC = new Map(); this._crateT0 = performance.now() / 1000; }
+    const now = performance.now() / 1000, ready = now - this._crateT0 > 1.5;
+    const alive = new Set();
+    for (const c of store.crates || []) {
+      alive.add(c.id);
+      let v = this.crateViews.get(c.id);
+      if (!v || v.ft !== c.ft) {
+        if (v) this.crateRoot.remove(v.g);
+        const g = this._crateModel(c.ft);
+        g.traverse((o) => { if (o.isMesh) o.userData.crate = c.id; });
+        v = { g, ft: c.ft }; this.crateViews.set(c.id, v); this.crateRoot.add(g);
+        if (ready && c.drop && c.loc.t === 'f') this._fallC.set(c.id, now);
+      }
+      const L = c.loc, [w, h, d] = v.g.userData.size;
+      v.floor = L.t === 'f';
+      if (L.t === 'f') {
+        let y = L.y || 0, spin = 0;
+        const f0 = this._fallC.get(c.id);
+        if (f0 != null) {
+          const t = now - f0, H = 14, T = Math.sqrt(2 * H / 19);
+          if (t < T) { y += H - 0.5 * 19 * t * t; spin = (T - t) * 1.2; } else if (t < T + 0.3) { y += Math.sin((t - T) / 0.3 * Math.PI) * 0.15; } else this._fallC.delete(c.id);
+        }
+        v.g.position.set(L.x, y, L.z); v.g.rotation.set(0, (L.ry || 0) + spin, 0); v.g.visible = true;
+      } else if (L.t === 'h' && fp && L.who === fp.who) {
+        // 一人称：画面の下に段ボールのふちが見える（両手を添える）
+        this.camera.updateMatrixWorld();
+        const bob = fp.bob || 0;
+        _v.set(0, -0.27 + bob - h, -0.5 - d / 2).applyMatrix4(this.camera.matrixWorld); // 段ボールの上のふちが画面の下に見える
+        v.g.position.copy(_v); v.g.quaternion.copy(this.camera.quaternion); v.g.visible = true;
+        this._fpRig(fp.av, [w, h, d]);
+        this.fpHands.position.set(0, -0.27 + bob - 0.02, -0.5 - d / 2); this.fpHands.rotation.set(0, 0, 0);
+      } else if (L.t === 'h') {
+        const ch = holders(L.who);
+        if (!ch) { v.g.visible = false; continue; }
+        const o = ch.root, yaw = o.rotation.y;
+        _e.set(0, yaw, 0);
+        const off = new THREE.Vector3(0, 0.55 * ch.av.height, 0.3 + d / 2).applyEuler(_e);
+        v.g.position.copy(o.position).add(off); v.g.rotation.set(0, yaw, 0); v.g.visible = true;
+      }
+    }
+    for (const [id, v] of this.crateViews) if (!alive.has(id)) { this.crateRoot.remove(v.g); this.crateViews.delete(id); this._fallC.delete(id); }
   }
   // レジのベルト上の商品
   syncRegs(store, regs) {
@@ -579,8 +661,9 @@ export class Renderer {
   }
 
   // ---------- レイキャスト ----------
-  pick(raycaster, { boxes = true, fixtures = true, belts = false, skip = null } = {}) {
+  pick(raycaster, { boxes = true, fixtures = true, belts = false, skip = null, crates = true } = {}) {
     const objs = [];
+    if (crates && this.crateViews) for (const v of this.crateViews.values()) if (v.floor) v.g.traverse((o) => { if (o.isMesh) objs.push(o); });
     if (fixtures) this.fixRoot.traverse((o) => { if (o.isMesh && !o.userData.noRay) objs.push(o); });
     if (boxes) for (const e of this.boxes.map.values()) for (const m of e.meshes) if (m.count > 0) objs.push(m);
     if (belts) for (const g of this.belts.values()) g.traverse((o) => o.isMesh && objs.push(o));
@@ -589,6 +672,7 @@ export class Renderer {
       const o = h.object;
       if (o.userData.belt) return { type: 'belt', ...o.userData.belt, point: h.point, dist: h.distance };
       if (o.isInstancedMesh && o.userData.inst) { const id = o.userData.inst.ids[h.instanceId]; if (id != null && !(skip && skip.has(id))) return { type: 'box', bid: id, point: h.point, dist: h.distance }; continue; }
+      if (o.userData.crate != null) return { type: 'crate', cid: o.userData.crate, point: h.point, dist: h.distance };
       if (o.userData.fid != null) return { type: 'fixture', fid: o.userData.fid, point: h.point, dist: h.distance };
     }
     return null;
@@ -616,6 +700,7 @@ export class Renderer {
     const bt = getBeltTex(); bt.offset.y = (bt.offset.y + dt * 0.25) % 1;
   }
   render() {
+    this._fit();
     try { this._thumbTick(); } catch (e) { /* サムネイルは失敗しても無視 */ }
     if (this.signHint?.visible) this.signHint.position.y = 2.05 + Math.sin(performance.now() / 260) * 0.06;
     if (this.composer) { try { this.composer.render(); return; } catch (e) { console.warn('post error', e); this.composer = null; } }

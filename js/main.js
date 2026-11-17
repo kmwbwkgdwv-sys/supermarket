@@ -45,6 +45,11 @@ class App {
     this.last = performance.now();
     this._setupPreviewDrag();
     window.addEventListener('resize', () => this.renderer.resize());
+    // 画面を回したとき：少し待ってからもう一度合わせる（iPhoneは回した直後の大きさが古いことがある）
+    const refit = () => { for (const ms of [60, 300, 800]) setTimeout(() => { this.renderer.resize(); this.input.layout(); }, ms); };
+    window.addEventListener('orientationchange', refit);
+    window.visualViewport?.addEventListener('resize', refit);
+    screen.orientation?.addEventListener?.('change', refit);
     window.addEventListener('pagehide', () => this.saveGame(true));
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.saveGame(false); });
     bootMsg('完成！', 100);
@@ -128,6 +133,7 @@ class App {
     hideScreen();
     this.game = new Game(this, { mode: 'solo' });
     this.mode = 'game';
+    this.renderer.resize();
     this.input.layout();
   }
   async startRoom(id, local) {
@@ -156,6 +162,7 @@ class App {
     hideScreen();
     this.game = new Game(this, { mode: role, room, roomId: id, store, local });
     this.mode = 'game';
+    this.renderer.resize();
     if (role === 'host' && store) { this.rememberRoom(id, store); this.saveShop(true); }
     toast(role === 'host' ? (cont ? `🏪 みんなの店「${store.name}」の続きから（Lv.${store.level}・${store.day}日目）！友だちに同じIDを教えよう` : `🏪 ルーム「${id}」を作りました！友だちに同じIDを教えよう`) : `👥 ルーム「${id}」に参加しました`, 'ok', 4000);
   }
@@ -227,6 +234,7 @@ class App {
     R.setTime(10.5 * 60);
     R.syncStore(st);
     R.syncBoxes(st, () => R.getChar('menu-me'));
+    R.syncCrates(st, () => null, null);
     R.syncRegs(st, {});
     R.syncChars([{ key: 'menu-me', kind: 'player', av: this.profile.av, x: 0.3, z: 7.4, ry: 0.15, local: true, an: 'wave' }], dt);
     R.syncBlobs(st, [[0.3, 7.4]]);

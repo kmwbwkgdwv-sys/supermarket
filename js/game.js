@@ -4,7 +4,7 @@ import { Sim, normalizeStore, getPrice, priceLimit } from './sim.js';
 import { FIXTURES, PRODUCTS, PLAYER_BOUNDS, PLAYER_SPAWN, BUILDING, MANAGER, STAFF_ROLES, TRASH_TYPES, DELIVERY_AREA, marketPrice, getWalls, fixtureFootprint, snapFixture, worldToLocal, pickSlot, pickBoxSlot,
   checkoutSpot, localToWorld, slotCapacity, pickTag, tagLocal } from './data.js';
 import { clamp, yen, dist, angleLerp, lerp } from './util.js';
-import { toast, h, modal } from './ui.js';
+import { toast, h, modal, confirmBox } from './ui.js';
 import { sanitizeAvatar } from './models/character.js';
 
 const RAY = new THREE.Raycaster();
@@ -265,6 +265,13 @@ export class Game {
     }
     // 手前の箱を拾いやすく
     if (!this.held()) {
+      let bestC = null, bdc = 1.9;
+      for (const c of this.store.crates || []) {
+        if (c.loc.t !== 'f') continue;
+        const d = dist(c.loc.x, c.loc.z, p.x, p.z), ang = Math.abs(angleLerp(0, Math.atan2(c.loc.x - p.x, c.loc.z - p.z) - p.yaw, 1));
+        if (d < bdc && ang < 0.9) { bdc = d; bestC = c; }
+      }
+      if (bestC) return { type: 'crate', cid: bestC.id, point: { x: bestC.loc.x, y: 0.4, z: bestC.loc.z } };
       let best = null, bd = 1.6;
       for (const b of this.store.boxes) {
         if (b.loc.t !== 'f') continue;
@@ -279,9 +286,55 @@ export class Game {
   fx(id) { return this.store.fixtures.find((f) => f.id === id); }
   held() { return this.store.boxes.find((b) => b.loc.t === 'h' && b.loc.who === this.me); }
   dropPoint() { const p = this.pc; return { x: p.x + Math.sin(p.ry) * 0.75, z: p.z + Math.cos(p.ry) * 0.75, ry: p.ry }; }
+  heldCrate() { return (this.store?.crates || []).find((c) => c.loc.t === 'h' && c.loc.who === this.me); }
+  // 置く場所：画面のまん中で狙った床（自分と重ならないように少し押し出す）
+  _placeAim(type, r, ignoreId) {
+    const cam = this.R.camera, p = this.pc;
+    V2.set(0, 0); RAY.setFromCamera(V2, cam);
+    const o = RAY.ray.origin, d = RAY.ray.direction;
+    let x, z;
+    if (d.y < -0.05) { const k = -o.y / d.y; x = o.x + d.x * k; z = o.z + d.z * k; }
+    else { x = p.x + Math.sin(p.yaw) * 3; z = p.z + Math.cos(p.yaw) * 3; }
+    const dd = dist(x, z, p.x, p.z); if (dd > 7) { x = p.x + (x - p.x) / dd * 7; z = p.z + (z - p.z) / dd * 7; }
+    [x, z] = snapFixture(type, x, z, r);
+    const overMe = (xx, zz) => { if (FIXTURES[type]?.air) return false; const f = fixtureFootprint(type, xx, zz, r); return p.x > f.minX - 0.3 && p.x < f.maxX + 0.3 && p.z > f.minZ - 0.3 && p.z < f.maxZ + 0.3; };
+    for (let k = 1; k <= 16 && overMe(x, z); k++) [x, z] = snapFixture(type, x + Math.sin(p.yaw) * 0.25, z + Math.cos(p.yaw) * 0.25, r);
+    const check = Sim.prototype.canPlaceFixture.call({ store: this.store }, type, x, z, r, ignoreId);
+    let ok = check === true, why = check;
+    if (ok && overMe(x, z)) { ok = false; why = '自分と重なっています（少し離れてね）'; }
+    return { x, z, ok, why };
+  }
+  // 大きい段ボールを持っているとき：置く場所を選んで「ここに置く」で設置
+  _crateActions(c, inp) {
+    const def = FIXTURES[c.ft];
+    if (inp.edges.has('rotate')) this.crateR = ((this.crateR || 0) + 1) % 4;
+    const r = this.crateR || 0, P = this._placeAim(c.ft, r, null);
+    this.R.setGhost(c.ft, P.x, P.z, r, P.ok, this.store); this._crateGhost = true;
+    return {
+      info: `📦 <b>${def.icon} ${def.name}</b>の大きい段ボール`,
+      hint: P.ok ? '置きたい場所を狙って「ここに置く」（「回す」で向きを変える）' : '⚠ ' + P.why,
+      act: { label: 'ここに置く', fn: () => { if (!P.ok) { toast(P.why, 'warn'); this.app.sfx.play('err'); return; } this.act({ t: 'unpack', x: P.x, z: P.z, r }); } },
+      alt: { label: '回す', fn: () => { this.crateR = (r + 1) % 4; } },
+      box: { label: '下ろす', icon: '📦', fn: () => this.act({ t: 'crateDrop', ...this.dropPoint() }) },
+      slot: null,
+    };
+  }
   _actions(t) {
     const held = this.held(), st = this.store;
     const A = { act: null, alt: null, hint: '', info: '', slot: null };
+    // 床に置いてある大きい段ボール（設備）
+    if (t?.type === 'crate') {
+      const c = (st.crates || []).find((o) => o.id === t.cid);
+      if (c) {
+        const def = FIXTURES[c.ft];
+        A.info = `📦 <b>${def.icon} ${def.name}</b>の大きい段ボール`;
+        if (held) { A.hint = '持っている箱を置いてから持とう'; A.box = { label: '床に置く', fn: () => this.act({ t: 'drop', ...this.dropPoint() }) }; return A; }
+        A.act = { label: '持つ', fn: () => { this.crateR = 0; this.act({ t: 'cratePick', cid: c.id }); } };
+        A.alt = { label: `返品 +${yen(def.price)}`, fn: async () => { this.setUIBlock(true); const ok = await confirmBox(`${def.icon} ${def.name}を返品しますか？（${yen(def.price)}もどります）`, '返品する'); this.setUIBlock(false); if (ok) this.act({ t: 'crateReturn', cid: c.id }); } };
+        A.hint = '持って、置きたい場所で「ここに置く」';
+        return A;
+      }
+    }
     const drop = { label: '床に置く', fn: () => this.act({ t: 'drop', ...this.dropPoint() }) };
     if (held) {
       const p = PRODUCTS[held.p];
@@ -370,8 +423,10 @@ export class Game {
     return { act: null, info: '🪧 入口の看板：<b style="color:#ff6b81">CLOSED</b>', hint: st.phase === 'closing' ? '店じまい中…残りのお客さんの会計をしよう' : '' };
   }
   _interact(dt, inp) {
-    const t = this._target();
-    const A = this._actions(t);
+    const crate = this.heldCrate();
+    const t = crate ? null : this._target();
+    if (!crate && this._crateGhost) { this._crateGhost = false; this.R.setGhost(null); }
+    const A = crate ? this._crateActions(crate, inp) : this._actions(t);
     this.R.setHighlight(A.slot ? A.slot[0] : t?.type === 'fixture' ? t.fid : null, A.slot ? (() => { const s = A.slot[1]; return [s.x, s.y, s.z, s.w, s.h ?? 0.35, s.d]; })() : null);
     this.input.setLabel('act', A.act?.label || '', !!A.act);
     this.input.setLabel('alt', A.alt?.label || '', !!A.alt);
@@ -443,7 +498,7 @@ export class Game {
 
   // ---------- 建築 ----------
   toggleBuild(on, move = null) {
-    if (on && this.held()) { toast('箱を置いてから建築モードにしてね', 'warn'); return; }
+    if (on && (this.held() || this.heldCrate())) { toast('箱を置いてから建築モードにしてね', 'warn'); return; }
     if (on && this.state === 'reg') this.leaveRegister(true);
     this.state = on ? 'build' : 'walk';
     this.build = { sel: null, moving: null, r: 0, x: 0, z: 0, ok: false };
@@ -462,7 +517,20 @@ export class Game {
   pickBuild(id) { this.build.sel = id; this.build.moving = null; this.R.setGhost(null); this.R.setFixtureHidden(null); this.ui.showBuild(true, id, (x) => this.pickBuild(x)); }
   _updateBuild(dt, inp) {
     const B = this.build, cam = this.R.camera, p = this.pc;
-    const type = B.sel || B.moving?.t;
+    if (B.sel && !B.moving) {
+      const def = FIXTURES[B.sel];
+      this.R.setGhost(null); this.R.setHighlight(null);
+      this.ui.showBuild(true, B.sel, (xx) => this.pickBuild(xx));
+      this.input.setLabel('act', `買う ${yen(def.price)}`, this.store.money >= def.price);
+      this.input.setLabel('alt', '', false);
+      this.input.setLabel('box', '選択解除', true, '✖'); this.input.setVisible('box', true);
+      this.ui.setHint(this.store.money >= def.price ? '買うと店の前に大きい段ボールで届きます。持って、置きたい場所で「ここに置く」' : '⚠ お金が足りません', `${def.icon} ${def.name}　${yen(def.price)}`);
+      this.ui.setKeys(this.input.touchVisible ? '' : 'E：買う　F：選択解除　B/Esc：終了');
+      if (inp.edges.has('box')) { this.pickBuild(null); return; }
+      if (inp.edges.has('act')) { if (this.store.money < def.price) { toast('お金が足りません', 'warn'); this.app.sfx.play('err'); } else { this.act({ t: 'buy', ft: B.sel }); this.pickBuild(null); } }
+      return;
+    }
+    const type = B.moving?.t;
     if (!type) this.ui.showBuild(true, null, (x) => this.pickBuild(x));
     if (inp.edges.has('rotate')) B.r = (B.r + 1) % 4;
     if (type) {
@@ -566,8 +634,10 @@ export class Game {
     for (const e of list) if (e.seedAv) e.av = this.app.avatarFromSeed(e.av, e.kind);
     for (const k of Object.keys(this.chat)) { this.chat[k].t -= dt; if (this.chat[k].t <= 0) delete this.chat[k]; }
     R.syncChars(list, dt);
-    R.syncBoxes(st, (who) => R.getChar(who === this.me ? 'me' : who.startsWith('s:') ? [...R.chars.keys()].find((k) => k.startsWith(who + ':')) : 'p:' + who),
-      s.cam === 'first' && this.state !== 'reg' ? { who: this.me, av: this.app.profile.av, bob: this.fpBob || 0 } : null);
+    const holders = (who) => R.getChar(who === this.me ? 'me' : who.startsWith('s:') ? [...R.chars.keys()].find((k) => k.startsWith(who + ':')) : 'p:' + who);
+    const fpH = s.cam === 'first' && this.state !== 'reg' ? { who: this.me, av: this.app.profile.av, bob: this.fpBob || 0 } : null;
+    R.syncBoxes(st, holders, fpH);
+    R.syncCrates(st, holders, fpH);
     R.syncRegs(st, d.r || {});
     R.syncBlobs(st, list.filter((e) => e.visible !== false || e.key === 'me').map((e) => { const c = R.getChar(e.key); return c ? [c.root.position.x, c.root.position.z] : [e.x, e.z]; }));
     R.world.update(dt, st.time, [[p.x, p.z], ...(d.c || []).map((c) => [c[2], c[3]]), ...Object.values(this.players).map((pl) => [pl.x, pl.z])]);

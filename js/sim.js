@@ -1,7 +1,7 @@
 // ===== 経営シミュレーション（ホスト側で実行・three.js 非依存） =====
 import {
   PRODUCTS, PRODUCTS_LIST, FIXTURES, SKILLS, STAFF_ROLES, STAFF_NAMES, BOX_SIZES, DELIVERY_AREA,
-  OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, BACK_Z, STOCK_Z, OLD_BACK_Z, OLD_STOCK_Z,
+  OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, BACK_Z, STOCK_Z, OLD_BACK_Z, OLD_STOCK_Z, V12_STOCK_Z, snapFixture,
   getWalls, zones, keepClear, expandTargets, fixtureFootprint, marketPrice, marketCost, OLD_LICENSES, slotCapacity, slotAccess, rackAccess, checkoutSpot, canPlace,
   staffLimit, STAFF_SLOTS, slotWage, staffSlotOpen, checkoutLimit, closeTime, xpNeed, costMult, productUnlocked, fixtureUnlocked, localToWorld, CELL, TRASH_TYPES, ORDER_MAX_BOXES, SHIPPING_FEE,
   MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits, wageFor, MANAGER, XP_YEN,
@@ -11,33 +11,33 @@ import { rand, randi, pick, dist, dist2, clamp } from './util.js';
 
 export function newStore(name) {
   const st = {
-    v: 11, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
+    v: 13, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
     skills: { start: true, prod_food1: true }, prices: {}, market: {}, marketPrev: {}, staff: [], nid: 100, phase: 'prep', time: OPEN_TIME,
     totalSales: 0, totalCustomers: 0, rev: 1, created: Date.now(), color: '#ff6b35',
     today: { sales: 0, served: 0, lost: 0, orders: 0, ship: 0, xp: 0, vend: 0, recycle: 0 },
     bays: Object.fromEntries(START_BAYS.map((b) => [b, 1])),
     stock: Object.fromEntries(START_STOCK.map((b) => [b, 1])),
     fixtures: initialFixtures(),
-    boxes: [], reviews: [],
+    boxes: [], reviews: [], crates: [],
   };
   // 最初は棚も倉庫も空っぽ。マネージャーボードで発注して補充するところから
   return st;
 }
 function initialFixtures() {
   return [
-    { id: 1, t: 'mboard', x: -2.5, z: -35.12, r: 0 },
-    { id: 2, t: 'fboard', x: -4.62, z: -32.75, r: 1 },
-    { id: 3, t: 'xboard', x: -0.38, z: -32.75, r: 3 },
-    { id: 4, t: 'recycle', x: 8, z: -31.3, r: 2 },
+    { id: 1, t: 'mboard', x: -2.5, z: -27.12, r: 0 },
+    { id: 2, t: 'fboard', x: -4.62, z: -24.75, r: 1 },
+    { id: 3, t: 'xboard', x: -0.38, z: -24.75, r: 3 },
+    { id: 4, t: 'recycle', x: 8, z: -23.3, r: 2 },
     { id: 5, t: 'checkout', x: 3, z: 3.25, r: 2 },
     { id: 6, t: 'shelf', x: -3, z: -3.5, r: 0, s: emptySlots('shelf') },
     { id: 7, t: 'shelf', x: -3, z: -0.75, r: 0, s: emptySlots('shelf') },
-    { id: 8, t: 'rack', x: -4.25, z: -18, r: 1 },
+    { id: 8, t: 'rack', x: -4.25, z: -16.2, r: 1 },
     { id: 9, t: 'basket', x: -2.25, z: 4.75, r: 0 },
     { id: 10, t: 'plant', x: -4.5, z: 5.5, r: 0 },
     { id: 11, t: 'trash', x: 4.5, z: 5.5, r: 0 },
     { id: 12, t: 'opensign', x: 2.25, z: 5.25, r: 0 },
-    { id: 13, t: 'dumpster', x: -0.9, z: -29.43, r: 0 },
+    { id: 13, t: 'dumpster', x: -0.9, z: -21.43, r: 0 },
   ];
 }
 // 旧レイアウト(v1)のセーブを新しい店舗に引っ越す：設備代は全額返金、棚の商品は箱に戻す
@@ -70,6 +70,7 @@ export const priceLimit = (store, pid) => Math.floor(marketPrice(store, pid) * (
 
 // 保存データの整合性を直す（読込時）
 export function normalizeStore(st) {
+  const fromV = st.v || 1;
   if ((st.v || 1) < 2) migrateV1(st);
   if (st.v < 3) {
     // 商品ライセンス → 商品ツリーへ。以前から売れていた商品はそのまま売れる
@@ -177,6 +178,20 @@ export function normalizeStore(st) {
     for (const o of st.staff || []) { o.spd ||= STAFF_SLOTS[(o.slot || 1) - 1]?.spd || 1; o.wage = wageFor(STAFF_ROLES[o.role] || STAFF_ROLES.stocker, o.spd); }
     st.v = 11;
   }
+  if (st.v < 12) {
+    // v12：倉庫係の仕事はなくなった → 品出し係に
+    for (const o of st.staff || []) if (!STAFF_ROLES[o.role]) { o.role = 'stocker'; o.wage = wageFor(STAFF_ROLES.stocker, o.spd); }
+    st.v = 12;
+  }
+  st.crates ||= [];
+  if (st.v < 13) {
+    // v13：倉庫の奥行きを半分に（1列8m → 4m）。v9〜v12 のセーブだけ、倉庫の中を縮めてマネージャー室を手前に戻す
+    if (fromV >= 9 && !st._fresh) shrinkStorageV13(st);
+    st.v = 13;
+  }
+  // 持ったままの大きい段ボールは店の前に戻す
+  for (const c of st.crates) if (c.loc?.t !== 'f') c.loc = crateSpot(st);
+  for (const o of st.staff || []) if (!STAFF_ROLES[o.role]) { o.role = 'stocker'; o.wage = wageFor(STAFF_ROLES.stocker, o.spd); }
   delete st._fresh;
   st.reviews ||= [];
   if (st.level >= MAX_LEVEL) st.xp = 0;
@@ -198,6 +213,51 @@ export function normalizeStore(st) {
   return st;
 }
 
+// 設備をつくる（設置したとき）
+function newFixture(st, t, x, z, r) {
+  const def = FIXTURES[t];
+  const f = { id: st.nid++, t, x, z, r };
+  if (def.slots) f.s = emptySlots(t);
+  if (def.text) { f.tx = t === 'banner' ? '食品' : t === 'neon' ? 'OPEN' : t === 'hangsign' ? '本日のおすすめ' : 'いらっしゃいませ'; f.c = t === 'neon' ? '#ff4fd8' : '#ffffff'; }
+  return f;
+}
+// 大きい段ボールが届く場所（店の前の荷物置き場の横。ほかの箱と重ならない所）
+export function crateSpot(st) {
+  const taken = [...(st.crates || []).filter((c) => c.loc?.t === 'f').map((c) => [c.loc.x, c.loc.z, 0.75]), ...(st.boxes || []).filter((b) => b.loc?.t === 'f').map((b) => [b.loc.x, b.loc.z, 0.45])];
+  const free = (x, z) => taken.every(([tx, tz, r]) => Math.abs(tx - x) > r + 0.55 || Math.abs(tz - z) > r + 0.45);
+  for (const z of [11.0, 12.3, 13.6, 14.9]) for (const x of [-1.6, -3.0, -4.4, -5.8, -7.2, 8.6, 10.0, 11.4]) if (free(x, z)) return { t: 'f', x, y: 0, z, ry: 0 };
+  return { t: 'f', x: -2 - Math.random() * 6, y: 0, z: 11 + Math.random() * 4, ry: 0 };
+}
+// v13：奥行き16mだった倉庫を8mに縮める（入らない設備は大きい段ボールに戻して店の前へ）
+function shrinkStorageV13(st) {
+  const mid = V12_STOCK_Z + 1; // これより奥はマネージャー室・裏口（そのまま8m手前へ）
+  const zmap = (z) => (z < mid ? z + (STOCK_Z - V12_STOCK_Z) : z < BACK_Z ? BACK_Z + (z - BACK_Z) * 0.5 : z);
+  for (const f of st.fixtures) if (f.z < BACK_Z) f.z = zmap(f.z);
+  for (const b of st.boxes) if (b.loc?.t === 'f' && b.loc.z < BACK_Z && b.loc.z > -60) b.loc.z = zmap(b.loc.z);
+  for (const c of st.crates) if (c.loc?.t === 'f' && c.loc.z < BACK_Z) c.loc.z = zmap(c.loc.z);
+  // 縮めて重なった・はみ出した設備は、近くの空いている所へ。だめなら段ボールに戻す
+  const S = { store: st };
+  for (const f of [...st.fixtures]) {
+    const def = FIXTURES[f.t];
+    if (!def || def.fixed || f.z >= BACK_Z) continue;
+    if (Sim.prototype.canPlaceFixture.call(S, f.t, f.x, f.z, f.r, f.id) === true) continue;
+    let best = null, bd = 1e9;
+    for (let x = -24.5; x <= 24.5; x += 0.5) for (let z = BACK_Z - 0.5; z >= STOCK_Z + 0.5; z -= 0.5) {
+      const d = (x - f.x) ** 2 + (z - f.z) ** 2; if (d >= bd) continue;
+      const [sx, sz] = snapFixture(f.t, x, z, f.r);
+      if (Sim.prototype.canPlaceFixture.call(S, f.t, sx, sz, f.r, f.id) === true) { bd = d; best = [sx, sz]; }
+    }
+    if (best) { [f.x, f.z] = best; continue; }
+    // 段ボールに戻す（棚に置いていた箱・商品は店の前へ）
+    st.fixtures = st.fixtures.filter((o) => o !== f);
+    let k = 0;
+    for (const b of st.boxes) if (b.loc?.t === 'r' && b.loc.fid === f.id) b.loc = deliverySpot(st, 40 + k++);
+    for (const s of f.s || []) if (s[0] && s[1] > 0) st.boxes.push({ id: st.nid++, p: s[0], n: s[1], loc: deliverySpot(st, 40 + k++), o: false });
+    st.crates.push({ id: st.nid++, ft: f.t, loc: crateSpot(st) });
+  }
+  // 床の箱の高さを積み直す
+  for (const b of st.boxes) if (b.loc?.t === 'f' && b.loc.z < BACK_Z) b.loc.y = Sim.prototype.stackHeight.call(S, b.loc.x, b.loc.z, b);
+}
 function deliverySpot(st, k) {
   const A = DELIVERY_AREA, cols = Math.floor((A.maxX - A.minX) / 0.7), rows = Math.floor((A.maxZ - A.minZ) / 0.56);
   const per = cols * rows, layer = Math.floor(k / per), i = k % per;
@@ -246,7 +306,7 @@ export class Sim {
     try { fn.call(this, uid, a); } catch (e) { console.error('action error', a, e); }
   }
   a_pick(uid, a) {
-    if (this.heldBox(uid)) return this.err(uid, 'すでに箱を持っています');
+    if (this.heldBox(uid) || this.heldCrate(uid)) return this.err(uid, 'すでに箱を持っています');
     const b = this.box(a.bid);
     if (!b || b.loc.t === 'h') return;
     if (b.loc.t === 'f') { // 上に積まれた箱があれば上から取る
@@ -361,20 +421,59 @@ export class Sim {
     this.toast(null, this.hasSkill('mk_express') ? '発注しました！すぐ店の前に届きます' : '発注しました！10秒ほどで店の前に届きます', 'ok');
     this.sfx('cash'); this.bump();
   }
+  // 設備を買う：店の前に大きい段ボールで届く（持って置きたい場所で開けると設置される）
   a_buy(uid, a) {
-    const def = FIXTURES[a.ft];
-    if (!def || !fixtureUnlocked(a.ft, this.store.skills)) return;
-    if (def.price > this.store.money) return this.err(uid, 'お金が足りません');
+    const st = this.store, def = FIXTURES[a.ft];
+    if (!def || def.fixed || !fixtureUnlocked(a.ft, st.skills)) return;
+    if (def.price > st.money) return this.err(uid, 'お金が足りません');
+    const count = (t) => st.fixtures.filter((f) => f.t === t).length + st.crates.filter((c) => c.ft === t).length;
+    if (a.ft === 'checkout' && count('checkout') >= checkoutLimit(st.skills)) return this.err(uid, 'レジはこれ以上置けません（スキルで増設）');
+    if (a.ft === 'selfcheckout' && count('selfcheckout') >= SELF_MAX) return this.err(uid, `セルフレジは${SELF_MAX}台までです`);
+    st.money -= def.price;
+    const c = { id: st.nid++, ft: a.ft, loc: crateSpot(st), drop: 1 };
+    st.crates.push(c);
+    this.toast(uid, `📦 ${def.icon} ${def.name}が大きい段ボールで店の前に届きます！持って、置きたい場所で「ここに置く」`, 'ok');
+    this.sfx('truck'); this.bump();
+  }
+  heldCrate(who) { return this.store.crates.find((c) => c.loc.t === 'h' && c.loc.who === who); }
+  crate(id) { return this.store.crates.find((c) => c.id === id); }
+  a_cratePick(uid, a) {
+    if (this.heldBox(uid) || this.heldCrate(uid)) return this.err(uid, 'すでに箱を持っています');
+    const c = this.crate(a.cid);
+    if (!c || c.loc.t === 'h') return;
+    c.loc = { t: 'h', who: uid }; delete c.drop;
+    this.sfx('pick'); this.bump();
+  }
+  a_crateDrop(uid, a) {
+    const c = this.heldCrate(uid);
+    if (!c) return;
+    const x = clamp(+a.x || 0, PLAYER_BOUNDS.minX, PLAYER_BOUNDS.maxX), z = clamp(+a.z || 0, PLAYER_BOUNDS.minZ, PLAYER_BOUNDS.maxZ);
+    c.loc = { t: 'f', x, y: 0, z, ry: +a.ry || 0 };
+    this.sfx('place'); this.bump();
+  }
+  // 持っている大きい段ボールを開けて、その場所に設置する
+  a_unpack(uid, a) {
+    const st = this.store, c = this.heldCrate(uid);
+    if (!c) return;
+    const def = FIXTURES[c.ft]; if (!def) return;
     const r = a.r & 3;
-    const ok = this.canPlaceFixture(a.ft, a.x, a.z, r, null);
+    const ok = this.canPlaceFixture(c.ft, a.x, a.z, r, null, true);
     if (ok !== true) return this.err(uid, ok);
-    const f = { id: this.store.nid++, t: a.ft, x: a.x, z: a.z, r };
-    if (def.slots) f.s = emptySlots(a.ft);
-    if (def.text) { f.tx = a.ft === 'banner' ? '食品' : a.ft === 'neon' ? 'OPEN' : a.ft === 'hangsign' ? '本日のおすすめ' : 'いらっしゃいませ'; f.c = a.ft === 'neon' ? '#ff4fd8' : '#ffffff'; }
-    this.store.fixtures.push(f);
-    this.store.money -= def.price;
-    this.nav.build(this.store);
+    st.fixtures.push(newFixture(st, c.ft, a.x, a.z, r));
+    st.crates = st.crates.filter((o) => o !== c);
+    this.nav.build(st);
+    this.toast(uid, `🔨 ${def.icon} ${def.name}を置きました！`, 'ok');
     this.sfx('build', a.x, a.z); this.bump();
+  }
+  // 段ボールのままなら返品できる（全額もどる）
+  a_crateReturn(uid, a) {
+    const st = this.store, c = this.crate(a.cid);
+    if (!c || (c.loc.t === 'h' && c.loc.who !== uid)) return;
+    const def = FIXTURES[c.ft];
+    st.crates = st.crates.filter((o) => o !== c);
+    st.money += def?.price || 0;
+    this.toast(uid, `↩ ${def?.name || '設備'}を返品しました（+${(def?.price || 0).toLocaleString()}円）`, 'ok');
+    this.sfx('coin'); this.bump();
   }
   a_move(uid, a) {
     const f = this.fx(a.fid);
@@ -496,12 +595,20 @@ export class Sim {
     if (!sl || !staffSlotOpen(st.skills, no)) return this.err(uid, 'スキルボードで「従業員」の枠を解放してください');
     if (used.has(no)) return this.err(uid, 'その枠にはもう人がいます');
     const seed = (a.seed >>> 0) || randi(1, 1e9);
-    const s = { id: st.nid++, role: a.role, name: String(a.name || pick(STAFF_NAMES)).slice(0, 10), seed, slot: no, spd: sl.spd, wage: slotWage(role, no) };
+    const s = { id: st.nid++, role: a.role, name: staffName(a.name) || pick(STAFF_NAMES), seed, slot: no, spd: sl.spd, wage: slotWage(role, no) };
     st.staff.push(s);
     this.toast(null, `No.${no}「${sl.title}」な${s.name}さんを${role.name}として雇いました！（日給 ¥${s.wage.toLocaleString()}）`, 'ok');
     this.sfx('bell'); this.bump();
   }
   // 従業員の仕事を変える
+  // 従業員の名前を変える
+  a_staffName(uid, a) {
+    if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
+    const s = this.store.staff.find((o) => o.id === a.sid), name = staffName(a.name);
+    if (!s || !name || s.name === name) return;
+    this.toast(null, `${s.name}さんの名前を「${name}」にしました`, 'ok');
+    s.name = name; this.bump();
+  }
   a_staffRole(uid, a) {
     if (!this.atBoard(uid)) return this.err(uid, BOARD_ONLY);
     const st = this.store, s = st.staff.find((o) => o.id === a.sid), role = STAFF_ROLES[a.role];
@@ -572,6 +679,8 @@ export class Sim {
     const p = this.players[uid];
     const b = this.heldBox(uid);
     if (b) b.loc = { t: 'f', x: p?.x ?? 0, y: 0, z: p?.z ?? 0, ry: 0 };
+    const c = this.heldCrate(uid);
+    if (c) c.loc = { t: 'f', x: p?.x ?? 0, y: 0, z: p?.z ?? 0, ry: 0 };
     for (const fid in this.dyn.regs) if (this.dyn.regs[fid].op === uid) this.dyn.regs[fid].op = null;
     delete this.players[uid];
     this.bump();
@@ -933,8 +1042,37 @@ export class Sim {
     if (rt.st !== 'idle' && rt.path && rt.pi < (rt.path?.length || 0)) rt.an = 'walk';
     if (s.role === 'cashier') return this.staffCashier(s, rt, dt, spd, who);
     if (s.role === 'stocker') return this.staffStocker(s, rt, dt, spd, who);
-    if (s.role === 'porter') return this.staffPorter(s, rt, dt, spd, who);
     if (s.role === 'cleaner') return this.staffCleaner(s, rt, dt, spd, who);
+    if (s.role === 'pricer') return this.staffPricer(s, rt, dt, spd, who);
+  }
+  // 値付け係：値札をまわって、売れるいちばん高い値段（高すぎるの1歩手前＝相場の+20%、ブランド力で+30%）に付けかえる
+  staffPricer(s, rt, dt, spd) {
+    const st = this.store;
+    if (rt.st === 'totag') {
+      const f = this.fx(rt.fid);
+      if (!f || !f.s?.[rt.si]?.[0]) { rt.st = 'idle'; rt.t = 0.3; rt.pid = null; return; }
+      if (stepPath(rt, dt, spd)) { rt.ry = Math.atan2(f.x - rt.x, f.z - rt.z); rt.st = 'retag'; rt.t = 1.4; }
+      return;
+    }
+    if (rt.st === 'retag') {
+      rt.an = 'reach'; rt.t -= dt * (rt.k || 1);
+      if (rt.t > 0) return;
+      const p = this.fx(rt.fid)?.s?.[rt.si]?.[0];
+      if (p) { const v = priceLimit(st, p); if (getPrice(st, p) !== v) { st.prices[p] = v; this.sfx('place', rt.x, rt.z); this.bump(); } }
+      rt.st = 'idle'; rt.t = 0.5; rt.pid = null; return;
+    }
+    if (!this.staffIdle(rt, dt)) return;
+    const tags = [];
+    for (const f of st.fixtures) if (f.s) f.s.forEach((x, si) => { if (x[0]) tags.push([f, si, x[0]]); });
+    if (!tags.length) { rt.msg = 'notag'; return; }
+    // ほかの値付け係が向かっている商品はまかせる（値段は商品ごとなので、1か所変えれば同じ商品の値札は全部変わる）
+    const claimed = new Set(st.staff.filter((o) => o !== s && o.role === 'pricer').map((o) => this.dyn.staffRt[o.id]?.pid).filter(Boolean));
+    const todo = tags.filter(([, , p]) => !claimed.has(p) && getPrice(st, p) !== priceLimit(st, p));
+    rt.msg = null;
+    if (!todo.length) { rt.t = 1.5; return; }
+    const near = (t) => { const [ax, az] = slotAccess(t[0], t[1]); return dist2(rt.x, rt.z, ax, az); };
+    todo.sort((a, b) => near(a) - near(b));
+    for (const [f, si, p] of todo.slice(0, 4)) { const [ax, az] = slotAccess(f, si); if (this.goto(rt, ax, az)) { rt.st = 'totag'; rt.fid = f.id; rt.si = si; rt.pid = p; return; } }
   }
   // ゴミ捨て係：空の段ボールを拾ってゴミ箱へ
   staffCleaner(s, rt, dt, spd, who) {
@@ -1120,40 +1258,6 @@ export class Sim {
     }
     return best;
   }
-  staffPorter(s, rt, dt, spd, who) {
-    const held = this.heldBox(who);
-    if (rt.st === 'tobox') {
-      const b = this.box(rt.bid);
-      if (!b || b.loc.t !== 'f') { rt.st = 'idle'; rt.t = 0.3; return; }
-      if (stepPath(rt, dt, spd)) {
-        b.loc = { t: 'h', who }; this.bump();
-        const spot = this.freeRackSlot(rt.x, rt.z);
-        if (!spot) { b.loc = { t: 'f', x: rt.x, y: 0, z: rt.z, ry: 0 }; rt.st = 'idle'; return; }
-        const [ax, az] = rackAccess(spot.f, spot.si);
-        if (this.goto(rt, ax, az)) { rt.st = 'torack'; rt.fid = spot.f.id; rt.si = spot.si; } else { b.loc = { t: 'f', x: rt.x, y: 0, z: rt.z, ry: 0 }; rt.st = 'idle'; }
-      }
-      return;
-    }
-    if (rt.st === 'torack') {
-      if (!held) { rt.st = 'idle'; return; }
-      if (stepPath(rt, dt, spd)) {
-        const occupied = this.store.boxes.some((o) => o.loc.t === 'r' && o.loc.fid === rt.fid && o.loc.si === rt.si);
-        if (occupied || !this.fx(rt.fid)) { const sp = this.freeRackSlot(rt.x, rt.z); if (sp) { const [ax, az] = rackAccess(sp.f, sp.si); rt.fid = sp.f.id; rt.si = sp.si; if (this.goto(rt, ax, az)) return; } held.loc = { t: 'f', x: rt.x, y: this.stackHeight(rt.x, rt.z, held), z: rt.z, ry: 0 }; this.bump(); rt.st = 'idle'; return; }
-        held.loc = { t: 'r', fid: rt.fid, si: rt.si }; this.bump(); rt.st = 'idle'; rt.t = 0.4;
-      }
-      return;
-    }
-    if (held) { held.loc = { t: 'f', x: rt.x, y: this.stackHeight(rt.x, rt.z, held), z: rt.z, ry: 0 }; this.bump(); }
-    if (!this.staffIdle(rt, dt)) return;
-    if (!this.freeRackSlot(rt.x, rt.z)) return;
-    const claimed = new Set(this.store.staff.map((o) => this.dyn.staffRt[o.id]?.bid));
-    const floor = this.store.boxes.filter((b) => b.loc.t === 'f' && b.n > 0 && !claimed.has(b.id) && b.loc.y < 0.05 + 2);
-    if (!floor.length) return;
-    floor.sort((a, b) => b.loc.y - a.loc.y || dist2(rt.x, rt.z, a.loc.x, a.loc.z) - dist2(rt.x, rt.z, b.loc.x, b.loc.z));
-    const b = floor[0];
-    if (this.goto(rt, b.loc.x, b.loc.z)) { rt.st = 'tobox'; rt.bid = b.id; }
-  }
-
   finishDay() {
     const st = this.store;
     const wageMul = st.skills.staff_wage ? 0.75 : 1;
@@ -1212,6 +1316,8 @@ export function cashGiven(total) {
 // 送料こみの支払い額
 // 来店の勢い：レベル・売り場の広さ・評判・広告。ゲーム画面の評判タブにも出す
 const BOARD_TYPES = ['mboard', 'fboard', 'xboard', 'pc'];
+// 従業員の名前：10文字まで・改行なし
+const staffName = (v) => String(v ?? '').replace(/[\r\n\t]/g, ' ').trim().slice(0, 10);
 const BOARD_ONLY = '📋 マネージャー室のボードの前で操作してください';
 export function customerFactors(st) {
   const bays = Math.max(1, Object.keys(st.bays || {}).length);

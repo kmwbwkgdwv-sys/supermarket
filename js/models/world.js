@@ -23,11 +23,12 @@ function interiorWall(g, mats, w, h, d, cx, y, cz) {
   const { paint, wains, rail, base, cove } = mats;
   add(g, wuv(T(box(w, h, d), cx, y, cz), PT), paint);
   if (y !== 0) return;
-  const ex = d < w ? 0 : 0.02, ez = w < d ? 0 : 0.02;
-  add(g, T(box(w + ex, 0.12, d + ez), cx, 0, cz), base);
-  add(g, wuv(T(box(w + ex * 0.5, 1.0, d + ez * 0.5), cx, 0.12, cz), WT), wains);
-  add(g, T(box(w + ex * 1.5, 0.05, d + ez * 1.5), cx, 1.12, cz), rail);
-  if (h >= CEIL) add(g, T(box(w + ex, 0.07, d + ez), cx, CEIL - 0.07, cz), cove);
+  // 飾りは壁より少しだけ大きく（端の面がぴったり重なると模様が2重にちらつくので、長さ方向にも数mmはみ出させる）
+  const lx = d < w ? 0.012 : 0.02, lz = w < d ? 0.012 : 0.02;
+  add(g, T(box(w + lx, 0.12, d + lz), cx, 0, cz), base);
+  add(g, wuv(T(box(w + lx * 0.6, 1.0, d + lz * 0.6), cx, 0.12, cz), WT), wains);
+  add(g, T(box(w + lx * 1.5, 0.05, d + lz * 1.5), cx, 1.12, cz), rail);
+  if (h >= CEIL) add(g, T(box(w + lx, 0.07, d + lz), cx, CEIL - 0.07, cz), cove);
 }
 const L = BUILDING.minX, R = BUILDING.maxX;
 
@@ -236,6 +237,12 @@ export class World {
       add(g, T(box(w, 0.08, 0.14), cx, 3.16, 6), trim);
     };
     frontSeg(L, -DOOR.half - 0.25); frontSeg(DOOR.half + 0.25, R);
+    // 建物の正面の角（横の壁と正面の壁の面が重なってちらつかないよう、角を柱でおおう）
+    for (const s of [-1, 1]) {
+      const x0 = s < 0 ? L - 0.24 : R - 0.14, x1 = s < 0 ? L + 0.14 : R + 0.24;
+      add(g, wuv(T(box(x1 - x0, WALL_H, 0.37), (x0 + x1) / 2, 0, 6.035), BTU, BTV), brick);
+      add(g, T(box(x1 - x0 + 0.04, 0.37, 0.41), (x0 + x1) / 2, 0, 6.035), stone);
+    }
     add(g, wuv(T(box(DOOR.half * 2 + 0.5, WALL_H - 3.0, 0.24), 0, 3.0, 6), PT), paint);
     for (const x of [-DOOR.half - 0.12, DOOR.half + 0.12]) add(g, T(box(0.24, 3.0, 0.3), x, 0, 6), trim);
     add(g, T(box(DOOR.half * 2 + 0.5, 0.25, 0.4), 0, 2.85, 6), trim);
@@ -316,7 +323,7 @@ export class World {
       else if (w.type === 'part') {
         // 仮設の合板の壁＋足元のトラ柄＋「拡張予定地」の札
         add(g, wuv(T(box(sx, CEIL, sz), cx, 0, cz), 1.2, 2.4), ply);
-        add(g, wuv(T(box(sx + (sx < sz ? 0.01 : 0), 0.3, sz + (sz < sx ? 0.01 : 0)), cx, 0.02, cz), 0.5), stripe);
+        add(g, wuv(T(box(sx + (sx < sz ? 0.01 : 0.012), 0.3, sz + (sz < sx ? 0.01 : 0.012)), cx, 0.02, cz), 0.5), stripe);
         const len = Math.max(sx, sz);
         for (let k = 0; k < Math.max(1, Math.floor(len / 5)); k++) for (const sd of [1, -1]) {
           const off = -len / 2 + (k + 0.5) * len / Math.max(1, Math.floor(len / 5));
@@ -353,7 +360,7 @@ export class World {
     }
     for (const s of STOCK_SECTIONS) {
       const cx = (s.x0 + s.x1) / 2;
-      if (store.stock?.[s.id]) for (const dx of [-2.5, 2.5]) for (const z of [s.z1 - 2.3, s.z0 + 2.3]) lights.push(T(plane(1.6, 0.25), cx + dx, CEIL - 0.012, z, Math.PI / 2));
+      if (store.stock?.[s.id]) for (const dx of [-2.5, 2.5]) for (const z of (s.z1 - s.z0 < 6 ? [(s.z0 + s.z1) / 2] : [s.z1 - 2.3, s.z0 + 2.3])) lights.push(T(plane(1.6, 0.25), cx + dx, CEIL - 0.012, z, Math.PI / 2));
       else { const f = M(T(plane(s.x1 - s.x0 - 0.1, s.z1 - s.z0 - 0.1), cx, 0.008, (s.z0 + s.z1) / 2, -Math.PI / 2), smat(surf('concrete'), 0x8f8d86, { r: 0.95 }), false); D.add(f); }
     }
     const mcx = (MANAGER.x0 + MANAGER.x1) / 2, mcz = (MANAGER.z0 + MANAGER.z1) / 2;

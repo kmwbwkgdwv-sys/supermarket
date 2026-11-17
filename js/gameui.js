@@ -150,15 +150,25 @@ export class GameUI {
           if (s) {
             const R = STAFF_ROLES[s.role] || STAFF_ROLES.stocker;
             body.append(h('div', { class: 'scard' }, head,
-              h('div', { class: 'row between' }, h('span', {}, `${R.icon} ${s.name}さん（${R.name}）`), h('span', { class: 'muted small' }, `日給 ${yen(s.wage)}`),
+              h('div', { class: 'row between' }, h('span', {}, `${R.icon} ${s.name}さん（${R.name}）`,
+                h('button', { class: 'btn tiny ghost', title: '名前を変える', onclick: async () => { const v = await promptBox('✏️ 従業員の名前（10文字まで）', s.name, { max: 10, placeholder: '名前' }); if (v) { g.act({ t: 'staffName', sid: s.id, name: v }); setTimeout(draw, 150); } } }, '✏️')),
+                h('span', { class: 'muted small' }, `日給 ${yen(s.wage)}`),
                 h('button', { class: 'btn small ghost', onclick: async () => { if (await confirmBox(`${s.name}さんを解雇しますか？`, '解雇')) { g.act({ t: 'fire', sid: s.id }); setTimeout(draw, 150); } } }, '解雇')),
               h('div', { class: 'roles' }, Object.entries(STAFF_ROLES).map(([k, d]) => h('button', { class: 'role' + (s.role === k ? ' on' : ''), onclick: () => { g.act({ t: 'staffRole', sid: s.id, role: k }); setTimeout(draw, 150); } }, d.icon + ' ' + d.name))),
               h('div', { class: 'muted small' }, R.desc)));
           } else if (open) {
-            const name = STAFF_NAMES[Math.floor(r() * STAFF_NAMES.length)], seed = Math.floor(r() * 1e9);
+            const name = (this._hireNames ||= {})[sl.no] ?? STAFF_NAMES[Math.floor(r() * STAFF_NAMES.length)], seed = Math.floor(r() * 1e9);
+            // 名前は自分で書ける（はじめは候補の名前が入っている）
+            const nameInp = h('input', { class: 'inp name-inp', value: name, maxlength: 10, placeholder: '名前' });
+            nameInp.oninput = () => { this._hireNames[sl.no] = nameInp.value; };
             body.append(h('div', { class: 'scard free' }, head,
-              h('div', { class: 'muted small' }, `${name}さんが働きたがっています。仕事を選んで雇おう：`),
-              h('div', { class: 'roles' }, Object.entries(STAFF_ROLES).map(([k, d]) => h('button', { class: 'role hire', onclick: () => { g.act({ t: 'hire', role: k, name, seed, slot: sl.no }); setTimeout(draw, 150); } }, `${d.icon} ${d.name}で雇う（日給${yen(slotWage(d, sl.no))}）`)))));
+              h('div', { class: 'row name-row' }, h('span', { class: 'muted small' }, '✏️ 名前'), nameInp, h('span', { class: 'muted small' }, 'さんが働きたがっています。仕事を選んで雇おう：')),
+              h('div', { class: 'roles' }, Object.entries(STAFF_ROLES).map(([k, d]) => h('button', { class: 'role hire', onclick: () => {
+                const nm = nameInp.value.trim();
+                if (!nm) { toast('名前を入れてね', 'warn'); nameInp.focus(); return; }
+                delete this._hireNames[sl.no];
+                g.act({ t: 'hire', role: k, name: nm, seed, slot: sl.no }); setTimeout(draw, 150);
+              } }, `${d.icon} ${d.name}で雇う（日給${yen(slotWage(d, sl.no))}）`)))));
           } else {
             body.append(h('div', { class: 'scard locked' }, head, h('div', { class: 'muted small' }, `🔒 スキル「従業員 No.${sl.no}」で解放（お店 Lv.${sl.lv}・${sl.cost}SP）`)));
           }
