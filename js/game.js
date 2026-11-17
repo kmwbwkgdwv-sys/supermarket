@@ -20,8 +20,9 @@ export class Game {
     this.ui.bind(this);
     this.players = {};
     this.events = [];
-    this.shared = !!opts.store; this.local = !!opts.local; // みんなの店（ルームでも、ひとりでも）
-    if (mode !== 'client') { this.sim = new Sim(this.shared ? opts.store : app.profile.store); this.store = this.sim.store; this.sim.players[this.me] = { x: 0, z: 0, name: app.profile.name }; this.sim.room = !!room; this.sim.custCap = app.renderer.lite ? 24 : 36; }
+    this.local = !!opts.local;
+    // ひとり・ホスト：自分のお店で遊ぶ（ホストがみんなで進めた分も自分のお店に保存）。参加した側はホストのお店を見るだけ
+    if (mode !== 'client') { this.sim = new Sim(app.profile.store); this.store = this.sim.store; this.sim.players[this.me] = { x: 0, z: 0, name: app.profile.name }; this.sim.room = !!room; this.sim.custCap = app.renderer.lite ? 24 : 36; }
     else { this.store = null; }
     this.dyn = null;
     const [sx, sz] = PLAYER_SPAWN;
@@ -72,7 +73,7 @@ export class Game {
         st.time = this.dyn?.time ?? this.store?.time ?? core.time ?? 480;
         const prevPhase = this.store?.phase;
         this.store = st;
-        if (this.roomId) this.app.rememberRoom(this.roomId, st); // 参加したルーム（みんなの店）を覚えておく
+        if (this.roomId) this.app.rememberRoom(this.roomId, st); // 参加したルームを覚えておく（ルーム画面の「前に遊んだルーム」）
         if (prevPhase === 'summary' && st.phase !== 'summary') this.ui.closeSummary();
         this.ui.refresh();
       } catch (e) { console.warn('store parse', e); }
@@ -167,9 +168,6 @@ export class Game {
     if (this.sim) {
       this.timers.save += dt;
       if (this.timers.save > 20) { this.timers.save = 0; this.app.saveGame(false); }
-    } else if (this.mode === 'client' && this.store && this.roomId && !this.local) {
-      this.timers.save += dt;
-      if (this.timers.save > 45) { this.timers.save = 0; this.app.cacheShop(this.roomId, this.store); }
     }
     this.timers.rank += dt;
     if (this.timers.rank > 90) { this.timers.rank = 0; this.app.pushRank(); }

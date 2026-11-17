@@ -153,10 +153,7 @@ export function showMenu(app) {
         h('div', { class: 'pc-store' }, '🏪 ' + st.name),
         h('div', { class: 'pc-stats' },
           stat('店レベル', 'Lv.' + st.level), stat('総売上', yen(st.totalSales)), stat('営業日', st.day + '日目'), stat('プレイ時間', fmtDuration(p.playTime))),
-        sync,
-        // いちばん最近のみんなの店：ここからすぐひとりで続きを遊べる
-        p.rooms?.[0] ? h('button', { class: 'btn small alt room-cont', onclick: async (e) => { e.currentTarget.disabled = true; try { await app.startSolo({ roomId: p.rooms[0].id }); } catch (err) { e.currentTarget.disabled = false; toast('⚠ ' + err.message, 'warn', 4000); } } },
-          `👥 みんなの店「${p.rooms[0].n || p.rooms[0].id}」Lv.${p.rooms[0].lv || 1} をひとりで続ける`) : null),
+        sync),
       h('div', { class: 'menu-btns' },
         h('button', { class: 'btn big', onclick: () => showStores(app) }, '🏪 ひとりで経営'),
         h('button', { class: 'btn big alt', onclick: () => showRoom(app) }, '👥 みんなで経営（ルーム）'),
@@ -168,7 +165,7 @@ export function showMenu(app) {
 }
 const stat = (k, v) => h('div', { class: 'stat' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
 
-// ---------- お店をえらぶ（自分のお店は何個でも・ホストした「みんなの店」もひとりで遊べる） ----------
+// ---------- お店をえらぶ（自分のお店は何個でも） ----------
 function showStores(app) {
   const p = app.profile;
   const msg = h('p', { class: 'muted small' }, '');
@@ -189,18 +186,9 @@ function showStores(app) {
       play(() => app.startSolo());
     } }, `＋ 新しいお店を作る（${own.length}/${MAX_OWN_STORES}）`)
     : h('p', { class: 'muted small' }, `自分のお店は${MAX_OWN_STORES}個までです`);
-  // ホストしたルームも、参加しただけのルームも（みんなの店はルームIDごとに1つ。だれでも続きを遊べる）
-  const rooms = p.rooms || [];
-  const roomRows = rooms.length ? rooms.map((r) => h('div', { class: 'store-row room' },
-    h('div', { class: 'sr-main' }, h('b', {}, `👥 ${r.n || ''}`), h('small', {}, `ルーム ${r.id}・Lv.${r.lv || 1}・${r.day || 1}日目${r.h ? '' : '・参加したルーム'}`)),
-    h('button', { class: 'btn small alt', onclick: () => play(() => app.startSolo({ roomId: r.id })) }, '▶ ひとりで遊ぶ'))) : [h('p', { class: 'muted small' }, 'まだありません（「みんなで経営」で遊んだルームのお店がここに出ます）')];
   screen('center', h('div', { class: 'card hero stores' }, h('h2', {}, '🏪 お店をえらぶ'),
-    h('p', { class: 'muted small store-note' }, '⭐ 自分のお店と 👥 みんなの店（ルームのお店）は別々に育ちます。ルームで育てたお店の続きは「👥 みんなの店」の「ひとりで遊ぶ」から。ひとりで進めた分もみんなの店に保存されるので、次にみんなで集まったときはその続きから遊べます（だれかがルームで遊んでいる間は開けません）'),
-    rooms.length ? h('div', { class: 'sum-h' }, '👥 みんなの店（ルームで遊んだお店）') : null,
-    rooms.length ? h('div', { class: 'store-list' }, roomRows) : null,
-    h('div', { class: 'sum-h' }, '⭐ 自分のお店'), h('div', { class: 'store-list' }, ownRows), addBtn,
-    rooms.length ? null : h('div', { class: 'sum-h' }, '👥 みんなの店（ルームで遊んだお店）'),
-    rooms.length ? null : h('div', { class: 'store-list' }, roomRows),
+    h('p', { class: 'muted small store-note' }, '「みんなで経営」でホストになったときは、えらんだ自分のお店にみんなを呼びます（みんなで進めた分はそのお店に保存）。ほかの人のルームに参加しても、自分のお店は変わりません'),
+    h('div', { class: 'store-list' }, ownRows), addBtn,
     msg,
     h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => app.showMenu() }, '戻る'))));
 }
@@ -216,12 +204,12 @@ function showRoom(app) {
     try { await app.startRoom(id, useLocal.checked || !app.cloud.configured); }
     catch (e) { msg.textContent = '⚠ ' + e.message; }
   };
-  // 前に遊んだルーム（みんなの店）
+  // 前に遊んだルーム
   const rooms = (app.profile?.rooms || []).slice(0, 6);
   const recent = rooms.length ? h('div', { class: 'room-list' }, h('div', { class: 'muted small' }, '🏪 前に遊んだルーム（タップでIDを入れる）'),
     rooms.map((r) => h('button', { class: 'room-chip', onclick: () => { inp.value = r.id; } }, h('b', {}, r.id), h('span', {}, ` ${r.n || ''}`), h('small', {}, ` Lv.${r.lv || 1}・${r.day || 1}日目`)))) : null;
   screen('center', h('div', { class: 'card hero' }, h('h2', {}, '👥 ルームに参加・作成'),
-    h('p', { class: 'muted' }, '同じルームIDを入力した最大4人で、1つのお店を一緒に経営できます。お店は「みんなの店」としてルームIDごとに保存されるので、ホームに戻っても、次に同じIDで集まれば（誰がホストでも）続きから遊べます。'),
+    h('p', { class: 'muted' }, '同じルームIDを入力した最大4人で、1つのお店を一緒に経営できます。最初に入った人がホストになり、ホストの自分のお店（えらべます）にみんなを呼びます。みんなで進めた分はホストのお店に保存され、ホストがひとりで遊ぶときも続きから。参加した人のお店は保存されず、自分のお店はそのまま変わりません。'),
     recent,
     inp, h('button', { class: 'btn ghost small', onclick: () => { inp.value = randomCode(6); } }, '🎲 ランダムなIDを作る'),
     app.cloud.configured ? h('label', { class: 'chk' }, useLocal, ' 同じ端末のタブ同士でテスト（オフライン）') :

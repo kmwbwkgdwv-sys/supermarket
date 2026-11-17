@@ -145,6 +145,19 @@ export function newOwnStore(p, name) {
   p.store = newStore(String(name || p.name + 'マート').slice(0, 16)); p.cur = randomCode(6);
   return true;
 }
+// ほかから来たお店を自分のお店に入れる。同じお店（作った時刻 created が同じ）があれば、進んでいる方を残す
+// 戻り値：'cur'（いまのお店を置きかえ）/'slot'（ほかのお店を置きかえ）/'new'（一覧に追加）/'full'（いっぱい）/null（今のままの方が進んでいる）
+export function importStore(p, st) {
+  const prog = (s) => (s.level || 1) * 1e10 + (s.day || 1) * 1e6 + Math.min(999999, Math.round((s.totalSales || 0) / 1000));
+  if (st.created && p.store?.created === st.created) { if (prog(st) > prog(p.store)) { p.store = st; return 'cur'; } return null; }
+  for (const s of p.slots || []) {
+    let o = null; try { o = JSON.parse(s.d); } catch (e) { continue; }
+    if (st.created && o?.created === st.created) { if (prog(st) > prog(o)) { Object.assign(s, slotInfo(s.sid, st), { d: JSON.stringify(st) }); return 'slot'; } return null; }
+  }
+  if (listOwnStores(p).length >= MAX_OWN_STORES) return 'full';
+  p.slots = [...(p.slots || []), { ...slotInfo(randomCode(6), st), d: JSON.stringify(st) }];
+  return 'new';
+}
 export function deleteStore(p, sid) {
   if (sid === p.cur) return false;
   p.slots = (p.slots || []).filter((o) => o.sid !== sid);
