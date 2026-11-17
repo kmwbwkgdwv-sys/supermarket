@@ -527,11 +527,13 @@ function stockMap(st, dyn) {
   for (const d of dyn?.deliveries || []) for (const [p, n, half] of d.items || []) if (PRODUCTS[p]) get(p).coming += n * (half ? halfQty(p) : PRODUCTS[p].qty);
   return m;
 }
+// 在庫の合計はいつも全部見えるように（せまい画面では内訳のほうを省略する）
 function stockLine(sm, pid) {
   const e = sm.get(pid);
-  const coming = e?.coming ? h('span', { class: 'coming' }, ` 🚚+${e.coming}`) : null;
-  if (!e || (!e.shelf && !e.back)) return h('div', { class: 'pstock none' }, '在庫 0', coming);
-  return h('div', { class: 'pstock' }, `在庫 ${e.shelf + e.back}（棚${e.shelf}・箱${e.back}${e.boxes ? `/${e.boxes}箱` : ''}）`, coming);
+  const coming = e?.coming ? h('span', { class: 'coming' }, `🚚+${e.coming}`) : null;
+  if (!e || (!e.shelf && !e.back)) return h('div', { class: 'pstock none' }, h('span', { class: 'tot' }, '在庫 0'), coming);
+  const det = `棚${e.shelf}・箱${e.back}${e.boxes ? `（${e.boxes}箱）` : ''}`;
+  return h('div', { class: 'pstock', title: `在庫 ${e.shelf + e.back}：${det}` }, h('span', { class: 'tot' }, `在庫 ${e.shelf + e.back}`), coming, h('span', { class: 'det' }, det));
 }
 // 相場の上下を表示
 function trend(st, pid) {
