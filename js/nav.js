@@ -1,5 +1,5 @@
 // ===== ナビゲーショングリッドとA*経路探索（three.js 非依存） =====
-import { CELL, NAV_BOUNDS, DELIVERY_AREA, zones, getWalls, fixtureFootprint } from './data.js';
+import { CELL, NAV_BOUNDS, DELIVERY_AREA, FIXTURES, zones, getWalls, fixtureFootprint } from './data.js';
 
 export class NavGrid {
   constructor() {
@@ -27,6 +27,7 @@ export class NavGrid {
     for (const z of zones(store)) open(z);
     for (const w of getWalls(store)) this._mark(w, 1, w.type === 'pillar' ? 0.3 : 0.22);
     for (const f of store.fixtures) {
+      if (FIXTURES[f.t]?.air) continue; // 吊り看板の下は通れる
       const fp = fixtureFootprint(f.t, f.x, f.z, f.r);
       this._mark(fp, 1, 0.12);
     }

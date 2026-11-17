@@ -4,7 +4,7 @@ import {
   OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, BACK_Z, STOCK_Z, OLD_BACK_Z, OLD_STOCK_Z,
   getWalls, zones, keepClear, expandTargets, fixtureFootprint, marketPrice, marketCost, OLD_LICENSES, slotCapacity, slotAccess, rackAccess, checkoutSpot, canPlace,
   staffLimit, STAFF_SLOTS, slotWage, staffSlotOpen, checkoutLimit, closeTime, xpNeed, costMult, productUnlocked, fixtureUnlocked, localToWorld, CELL, TRASH_TYPES, ORDER_MAX_BOXES, SHIPPING_FEE,
-  MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits, wageFor, MANAGER,
+  MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits, wageFor, MANAGER, XP_YEN,
 } from './data.js';
 import { NavGrid } from './nav.js';
 import { rand, randi, pick, dist, dist2, clamp } from './util.js';
@@ -370,7 +370,7 @@ export class Sim {
     if (ok !== true) return this.err(uid, ok);
     const f = { id: this.store.nid++, t: a.ft, x: a.x, z: a.z, r };
     if (def.slots) f.s = emptySlots(a.ft);
-    if (def.text) { f.tx = a.ft === 'banner' ? '食品' : a.ft === 'neon' ? 'OPEN' : 'いらっしゃいませ'; f.c = a.ft === 'neon' ? '#ff4fd8' : '#ffffff'; }
+    if (def.text) { f.tx = a.ft === 'banner' ? '食品' : a.ft === 'neon' ? 'OPEN' : a.ft === 'hangsign' ? '本日のおすすめ' : 'いらっしゃいませ'; f.c = a.ft === 'neon' ? '#ff4fd8' : '#ffffff'; }
     this.store.fixtures.push(f);
     this.store.money -= def.price;
     this.nav.build(this.store);
@@ -593,10 +593,11 @@ export class Sim {
     const walls = getWalls(st);
     if (walls.some((w) => w.type === 'pillar' && hit(w))) return '柱と重なっています';
     if (walls.some(hit)) return '壁と重なっています';
-    if (keepClear(st).some(hit)) return '入口・通路・荷受け場には置けません';
+    if (!def.air && keepClear(st).some(hit)) return '入口・通路・荷受け場には置けません';
     for (const f of this.store.fixtures) {
       if (f.id === ignoreId) continue;
-      if (hit(fixtureFootprint(f.t, f.x, f.z, f.r))) return '他の設備と重なっています';
+      if (!!FIXTURES[f.t]?.air !== !!def.air) continue; // 天井から吊るす物と床に置く物は重なってOK
+      if (hit(fixtureFootprint(f.t, f.x, f.z, f.r))) return def.air ? 'ほかの吊り看板と重なっています' : '他の設備と重なっています';
     }
     if (def.cat === 'checkout' && t === 'checkout' && ignoreId == null) {
       if (this.store.fixtures.filter((f) => f.t === 'checkout').length >= checkoutLimit(st.skills)) return 'レジはこれ以上置けません（スキルで増設）';
@@ -867,7 +868,7 @@ export class Sim {
     st.money += total; st.today.sales += total; st.totalSales += total; st.today.served++; st.totalCustomers++;
     const items = (st.today.items ||= {});
     for (const b of r.belt) { const e = (items[b.p] ||= [0, 0]); e[0]++; e[1] += b.price; }
-    const gx = Math.ceil(total / 25); st.today.xp += gx;
+    const gx = Math.max(1, Math.round(total / XP_YEN)); st.today.xp += gx;
     if (st.level < MAX_LEVEL) st.xp += gx;
     while (st.level < MAX_LEVEL && st.xp >= xpNeed(st.level)) {
       st.xp -= xpNeed(st.level); st.level++;

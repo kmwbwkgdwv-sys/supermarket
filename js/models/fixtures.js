@@ -537,6 +537,26 @@ const BUILD = {
     for (const x of [-0.3, 0.3]) add(g, T(cyl(0.004, 0.004, 0.1, 4), 0, 2.5), DARK(), x);
     return g;
   },
+  // 天井から吊るす両面の看板
+  hangsign(f, ctx) {
+    const g = new THREE.Group();
+    const W = 1.4, H = 0.46, y0 = 2.5, top = 3.8;
+    const bg = f.c && f.c !== '#ffffff' ? f.c : ctx.color;
+    const t = signTexture(f.tx || '', { w: 768, h: 256, bg, fg: '#ffffff', radius: 36 });
+    const board = new THREE.Group();
+    add(board, rbox(W + 0.06, H + 0.06, 0.04, 0.02), C(0xf6f6f6, { r: 0.45 }));
+    board.add(M(T(plane(W, H), 0, H / 2 + 0.03, 0.0215), basic(t)));
+    board.add(M(T(plane(W, H), 0, H / 2 + 0.03, -0.0215, 0, Math.PI), basic(t)));
+    add(board, T(box(W + 0.12, 0.03, 0.05), 0, H + 0.06), CHROME());
+    board.position.y = y0; g.add(board);
+    const wireY = y0 + H + 0.09, len = top - wireY;
+    for (const x of [-W * 0.36, W * 0.36]) {
+      add(g, T(cyl(0.004, 0.004, len, 4), 0, wireY), DARK(), x);
+      add(g, T(cyl(0.035, 0.035, 0.02, 10), 0, top - 0.02), CHROME(), x); // 天井の金具
+      add(g, T(torus(0.012, 0.003, 4, 8), 0, wireY + 0.01, 0, 0, Math.PI / 2), CHROME(), x); // 吊り金具
+    }
+    return g;
+  },
   neon(f) {
     const g = new THREE.Group();
     for (const x of [-0.4, 0.4]) add(g, box(0.04, 1.5, 0.04), DARK(), x, 0, -0.05);

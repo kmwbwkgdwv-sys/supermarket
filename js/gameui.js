@@ -187,13 +187,26 @@ export class GameUI {
     const m = modal(`🏷 値札：${p.icon} ${p.name}`, [], { onClose: () => this.closed() });
     this.opened(m); draw();
   }
-  async openText(fid) {
+  // 看板の文字（と色）を変える
+  openText(fid) {
     const g = this.g, f = g.store.fixtures.find((o) => o.id === fid);
     if (!f) return;
-    this.opened({ close() {} });
-    const v = await promptBox('看板の文字（改行は / ）', (f.tx || '').replace(/\n/g, '/'), { max: 24 });
-    this.closed();
-    if (v != null) g.act({ t: 'text', fid, v: v.replace(/\//g, '\n') });
+    const def = FIXTURES[f.t];
+    const colorable = ['hangsign', 'banner', 'neon'].includes(f.t);
+    const COLORS = f.t === 'neon' ? ['#ff4fd8', '#4fd8ff', '#ffe14f', '#5dff7a', '#ff6b4f', '#b77bff', '#ffffff'] : ['#ffffff', '#e63946', '#ff7a1a', '#f2b705', '#2a9d8f', '#1d6fd1', '#6a4c93', '#2b2d42'];
+    let col = f.c || COLORS[0];
+    const inp = h('input', { class: 'inp', value: (f.tx || '').replace(/\n/g, '/'), maxlength: 24, placeholder: '例：本日のおすすめ' });
+    const sw = h('div', { class: 'swatches' });
+    const drawSw = () => { sw.innerHTML = ''; for (const c of COLORS) sw.append(h('button', { class: 'sw' + (c === col ? ' on' : ''), title: c === '#ffffff' && f.t !== 'neon' ? 'お店の色' : c, style: { background: c === '#ffffff' && f.t !== 'neon' ? (g.store.color || '#ff6b35') : c }, onclick: () => { col = c; drawSw(); } })); };
+    drawSw();
+    const ok = () => { g.act({ t: 'text', fid, v: inp.value.trim().replace(/\//g, '\n'), c: colorable ? col : undefined }); m.close(); };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); });
+    const m = modal(`${def.icon} ${def.name}の文字`, [
+      h('div', { class: 'muted small' }, '文字は24文字まで。「/」で改行できます'), inp,
+      colorable ? h('div', { class: 'muted small' }, f.t === 'neon' ? '光の色' : '看板の色（左はお店の色）') : null, colorable ? sw : null,
+      h('div', { class: 'row end' }, h('button', { class: 'btn', onclick: ok }, '決定'))], { onClose: () => this.closed() });
+    this.opened(m);
+    setTimeout(() => inp.focus(), 60);
   }
   opened(m) { if (this.open && this.open !== m) { const o = this.open; this.open = null; try { o.close(); } catch (e) { /* noop */ } } this.open = m; this.g.setUIBlock(true); }
   closed() { this.open = null; this._redraw = null; this.g.setUIBlock(false); }

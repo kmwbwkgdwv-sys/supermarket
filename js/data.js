@@ -343,7 +343,8 @@ export const FIXTURES = {
   gumball: F({ name: 'ガチャマシン', cat: 'deco', icon: '🍬', price: 2500, w: 0.5, d: 0.5, place: 'any', req: 'fx_deco', desc: '子どもが喜ぶ(評判+)' }),
   flower: F({ name: '花壇', cat: 'deco', icon: '🌷', price: 2200, w: 1, d: 0.5, place: 'any', req: 'fx_deco', desc: 'カラフルな花' }),
   signstand: F({ name: 'スタンド看板', cat: 'sign', icon: '🪧', price: 2000, w: 0.5, d: 0.5, place: 'any', req: 'fx_sign', text: true, desc: '好きな文字を書ける黒板看板' }),
-  banner: F({ name: '売り場案内板', cat: 'sign', icon: '🏷️', price: 1800, w: 0.5, d: 0.5, place: 'any', req: 'fx_sign', text: true, desc: '売り場名を掲げる吊り看板' }),
+  banner: F({ name: '売り場案内板', cat: 'sign', icon: '🏷️', price: 1800, w: 0.5, d: 0.5, place: 'any', req: 'fx_sign', text: true, desc: 'ポールに売り場名を掲げる案内板' }),
+  hangsign: F({ name: '吊り看板', cat: 'sign', icon: '🎌', price: 3000, w: 1.5, d: 0.5, place: 'any', req: 'fx_sign', text: true, air: true, desc: '天井から吊るす両面の看板。好きな文字と色にできる（下を通れて、棚の上にも吊るせる）' }),
   neon: F({ name: 'ネオン看板', cat: 'sign', icon: '💡', price: 4500, w: 1, d: 0.5, place: 'any', req: 'fx_sign', text: true, desc: '光る文字の看板' }),
 };
 export const FIXTURE_CATS = { shelf: '陳列棚', cold: '冷蔵・冷凍', storage: '在庫', checkout: 'レジ', deco: '装飾', sign: '看板' };
@@ -564,7 +565,7 @@ export const SKILLS_LIST = [
   S('fx_checkout3', 'レジ増設 II', '🧾', 2, 0, 3, ['fx_gondola'], 'レジを最大6台まで置ける（お客さんが増えたら）', 'shop'),
   S('fx_selfreg', 'セルフレジ', '🤖', 3, 0, 4, ['fx_checkout3'], 'セルフレジを4台まで置ける。お客さんが自分でお会計（ただし遅く、使いたがらない人もいる）', 'shop'),
   S('fx_deco', '装飾アイテム', '🪴', 1, 1, 1, ['start'], 'ベンチ・自販機・ガチャ・花壇が解放', 'shop'),
-  S('fx_sign', '看板職人', '🪧', 1, 1, 2, ['fx_deco'], 'スタンド看板・案内板・ネオン看板が解放', 'shop'),
+  S('fx_sign', '看板職人', '🪧', 1, 1, 2, ['fx_deco'], 'スタンド看板・案内板・ネオン看板・吊り看板が解放', 'shop'),
   S('fx_rack2', '大型在庫棚', '🏗️', 2, 2, 1, ['start'], '16箱入る大型在庫棚が解放', 'shop'),
   S('fx_shelf2', 'いろいろな棚', '🔚', 1, 3, 1, ['start'], 'エンド棚・平台・特売ワゴンが解放', 'shop'),
   S('fx_shelf3', '大型陳列', '🧱', 2, 3, 2, ['fx_shelf2'], '壁面ハイ棚・ひな壇が解放', 'shop'),
@@ -622,9 +623,11 @@ export const SELF_MAX = 4; // セルフレジは4台まで（遅いのでこれ�
 export const halfQty = (pid) => Math.ceil(PRODUCTS[pid].qty / 2);
 export const boxUnits = (pid, half) => (half ? halfQty(pid) : PRODUCTS[pid].qty);
 export function closeTime(skills) { return skills.mk_hours ? 24 * 60 : CLOSE_TIME; }
-// お店のレベルは最大30。上がるほど次のレベルまでの経験値が増える（Lv1→2:120 / Lv10:約1,160 / Lv20:約4,970 / Lv29:約21,500）
+// お店のレベルは最大30。上がるほど次のレベルまでの経験値がどんどん増える（Lv1→2:250 / Lv5:約950 / Lv10:約2,750 / Lv20:約12,800 / Lv29:約68,000）
+// 経験値は売上 ¥100 につき 1（XP_YEN）
 export const MAX_LEVEL = 30;
-export function xpNeed(level) { return Math.round((120 * Math.pow(1.2, level - 1) + 60 * (level - 1)) / 10) * 10; }
+export const XP_YEN = 100;
+export function xpNeed(level) { return Math.round((250 * Math.pow(1.22, level - 1) + 100 * (level - 1)) / 10) * 10; }
 // レベルアップでもらえるSP（高いレベルほど多い）：Lv2〜4は2、Lv5〜9は3 … Lv30は8
 export const spForLevel = (lv) => 2 + Math.floor(lv / 5);
 export const spTotalNew = (lv) => { let s = 0; for (let l = 2; l <= lv; l++) s += spForLevel(l); return s; };

@@ -175,7 +175,7 @@ export class Game {
     if (st.rev === this.colRev) return;
     this.colRev = st.rev;
     this.rects = [...getWalls(st), ...this.R.world.obstacles];
-    for (const f of st.fixtures) { const fp = fixtureFootprint(f.t, f.x, f.z, f.r); this.rects.push({ minX: fp.minX + 0.04, maxX: fp.maxX - 0.04, minZ: fp.minZ + 0.04, maxZ: fp.maxZ - 0.04, fx: true }); }
+    for (const f of st.fixtures) { if (FIXTURES[f.t]?.air) continue; const fp = fixtureFootprint(f.t, f.x, f.z, f.r); this.rects.push({ minX: fp.minX + 0.04, maxX: fp.maxX - 0.04, minZ: fp.minZ + 0.04, maxZ: fp.maxZ - 0.04, fx: true }); }
   }
   _move(dx, dz) {
     const p = this.pc, r = 0.28;
@@ -474,7 +474,7 @@ export class Game {
       const dd = dist(x, z, p.x, p.z); if (dd > 7) { x = p.x + (x - p.x) / dd * 7; z = p.z + (z - p.z) / dd * 7; }
       [x, z] = snapFixture(type, x, z, B.r);
       // 自分と重なる位置なら、向いている方向へ少しずつ押し出す
-      const overMe = (xx, zz) => { const f = fixtureFootprint(type, xx, zz, B.r); return p.x > f.minX - 0.3 && p.x < f.maxX + 0.3 && p.z > f.minZ - 0.3 && p.z < f.maxZ + 0.3; };
+      const overMe = (xx, zz) => { if (FIXTURES[type]?.air) return false; const f = fixtureFootprint(type, xx, zz, B.r); return p.x > f.minX - 0.3 && p.x < f.maxX + 0.3 && p.z > f.minZ - 0.3 && p.z < f.maxZ + 0.3; };
       for (let k = 1; k <= 16 && overMe(x, z); k++) [x, z] = snapFixture(type, x + Math.sin(p.yaw) * 0.25, z + Math.cos(p.yaw) * 0.25, B.r);
       B.x = x; B.z = z;
       const check = Sim.prototype.canPlaceFixture.call({ store: this.store }, type, x, z, B.r, B.moving?.id ?? null);
