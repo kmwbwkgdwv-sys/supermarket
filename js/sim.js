@@ -366,6 +366,25 @@ function migrateV14(st) {
   for (const c of st.crates) if (c.loc?.t === 'f' && c.loc.z <= BUILDING.maxZ && !inZone(c.loc.x, c.loc.z)) c.loc = crateSpot(st);
   for (const b of st.boxes) if (b.loc?.t === 'f') b.loc.y = S.stackHeight(b.loc.x, b.loc.z, b);
 }
+// 設備を置く場所：狙った所に置けないとき（壁・柱・ほかの棚に少しかかる、区画のはしを狙ったなど）は、
+// となり（1m、大きい物は少し広く）で置ける所に寄せる。avoid(x, z) が true の所（自分と重なる所など）はよける
+export function fitPlacement(store, type, x, z, r, ignoreId, avoid = () => false) {
+  const S = { store }, chk = (xx, zz) => Sim.prototype.canPlaceFixture.call(S, type, xx, zz, r, ignoreId);
+  const check = chk(x, z);
+  if (check === true && !avoid(x, z)) return { x, z, ok: true, why: true };
+  // 寄せる範囲：1m（大きい物は半分の大きさ＋0.5mまで。壁の根元を狙っても背中を壁につけて置ける）
+  const fp = fixtureFootprint(type, 0, 0, r), R = Math.max(1, Math.ceil((Math.max(fp.rw, fp.rd) / 2 + 0.5) * 2) / 2);
+  const steps = []; for (let v = -R; v <= R + 1e-6; v += 0.5) steps.push(v);
+  const cands = [];
+  for (const dx of steps) for (const dz of steps) {
+    if (!dx && !dz) continue;
+    const [cx, cz] = snapFixture(type, x + dx, z + dz, r);
+    cands.push([Math.hypot(cx - x, cz - z), cx, cz]);
+  }
+  cands.sort((a, b) => a[0] - b[0]);
+  for (const [, cx, cz] of cands) if (!avoid(cx, cz) && chk(cx, cz) === true) return { x: cx, z: cz, ok: true, why: true };
+  return { x, z, ok: false, why: check === true ? '自分と重なっています（少し離れてね）' : check };
+}
 function deliverySpot(st, k) {
   const A = DELIVERY_AREA, cols = Math.floor((A.maxX - A.minX) / 0.7), rows = Math.floor((A.maxZ - A.minZ) / 0.56);
   const per = cols * rows, layer = Math.floor(k / per), i = k % per;

@@ -1,6 +1,6 @@
 // ===== ゲームセッション（操作・同期・描画の橋渡し） =====
 import * as THREE from 'three';
-import { Sim, normalizeStore, getPrice, priceLimit } from './sim.js';
+import { Sim, normalizeStore, getPrice, priceLimit, fitPlacement } from './sim.js';
 import { FIXTURES, PRODUCTS, boxProd, PLAYER_BOUNDS, PLAYER_SPAWN, BUILDING, MANAGER, STAFF_ROLES, TRASH_TYPES, DELIVERY_AREA, marketPrice, getWalls, fixtureFootprint, snapFixture, worldToLocal, pickSlot, pickBoxSlot,
   checkoutSpot, localToWorld, slotCapacity, pickTag, tagLocal } from './data.js';
 import { clamp, yen, dist, angleLerp, lerp } from './util.js';
@@ -164,6 +164,9 @@ export class Game {
     this._net(dt);
     this._render(dt);
     this.ui.updateHUD(dt, this.store, this.dyn);
+    // 発注画面・評判を開いたままでも、在庫や配送中の数を新しくする（1秒ごと）
+    this.timers.live = (this.timers.live || 0) + dt;
+    if (this.timers.live > 1 && this.store) { this.timers.live = 0; const k = this.store.rev + ':' + (this.sim?.dyn.deliveries.length ?? 0); if (k !== this._liveKey && this.ui.live()) this._liveKey = k; }
     this.app.profile.playTime += dt;
     if (this.sim) {
       this.timers.save += dt;
@@ -301,10 +304,7 @@ export class Game {
     [x, z] = snapFixture(type, x, z, r);
     const overMe = (xx, zz) => { if (FIXTURES[type]?.air) return false; const f = fixtureFootprint(type, xx, zz, r); return p.x > f.minX - 0.3 && p.x < f.maxX + 0.3 && p.z > f.minZ - 0.3 && p.z < f.maxZ + 0.3; };
     for (let k = 1; k <= 16 && overMe(x, z); k++) [x, z] = snapFixture(type, x + Math.sin(p.yaw) * 0.25, z + Math.cos(p.yaw) * 0.25, r);
-    const check = Sim.prototype.canPlaceFixture.call({ store: this.store }, type, x, z, r, ignoreId);
-    let ok = check === true, why = check;
-    if (ok && overMe(x, z)) { ok = false; why = '自分と重なっています（少し離れてね）'; }
-    return { x, z, ok, why };
+    return fitPlacement(this.store, type, x, z, r, ignoreId, overMe);
   }
   // 大きい段ボールを持っているとき：置く場所を選んで「ここに置く」で設置
   _crateActions(c, inp) {
@@ -548,20 +548,9 @@ export class Game {
     if (!type) this.ui.showBuild(true, null, (x) => this.pickBuild(x));
     if (inp.edges.has('rotate')) B.r = (B.r + 1) % 4;
     if (type) {
-      V2.set(0, 0); RAY.setFromCamera(V2, cam);
-      const o = RAY.ray.origin, d = RAY.ray.direction;
-      let x, z;
-      if (d.y < -0.05) { const k = -o.y / d.y; x = o.x + d.x * k; z = o.z + d.z * k; }
-      else { x = p.x + Math.sin(p.yaw) * 3; z = p.z + Math.cos(p.yaw) * 3; }
-      const dd = dist(x, z, p.x, p.z); if (dd > 7) { x = p.x + (x - p.x) / dd * 7; z = p.z + (z - p.z) / dd * 7; }
-      [x, z] = snapFixture(type, x, z, B.r);
-      // 自分と重なる位置なら、向いている方向へ少しずつ押し出す
-      const overMe = (xx, zz) => { if (FIXTURES[type]?.air) return false; const f = fixtureFootprint(type, xx, zz, B.r); return p.x > f.minX - 0.3 && p.x < f.maxX + 0.3 && p.z > f.minZ - 0.3 && p.z < f.maxZ + 0.3; };
-      for (let k = 1; k <= 16 && overMe(x, z); k++) [x, z] = snapFixture(type, x + Math.sin(p.yaw) * 0.25, z + Math.cos(p.yaw) * 0.25, B.r);
-      B.x = x; B.z = z;
-      const check = Sim.prototype.canPlaceFixture.call({ store: this.store }, type, x, z, B.r, B.moving?.id ?? null);
-      B.ok = check === true; B.why = check;
-      if (B.ok && overMe(x, z)) { B.ok = false; B.why = '自分と重なっています（少し離れてね）'; }
+      // 狙った床に置く（置けなければ1mまでのとなりへ寄せる）
+      const P = this._placeAim(type, B.r, B.moving?.id ?? null), x = P.x, z = P.z;
+      B.x = x; B.z = z; B.ok = P.ok; B.why = P.why;
       this.ui.showBuild(true, B.sel || B.moving?.t, (xx) => this.pickBuild(xx), B.moving ? { type, ok: B.ok, why: B.why } : null);
       this.R.setGhost(type, x, z, B.r, B.ok, this.store);
       const price = FIXTURES[type].price;

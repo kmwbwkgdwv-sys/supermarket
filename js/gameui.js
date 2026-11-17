@@ -99,7 +99,7 @@ export class GameUI {
             h('button', { onclick: () => { cart.set(key, Math.max(0, n - 1)); draw(); } }, '−'), h('b', {}, n),
             h('button', { class: full ? 'dim' : '', onclick: () => { if (full) { toast(`カートは最大${ORDER_MAX_BOXES}箱までです`, 'warn'); return; } cart.set(key, n + 1); draw(); } }, '＋'));
         };
-        const sm = stockMap(st);
+        const sm = stockMap(st, g.sim?.dyn);
         if (cat === EMPTY_BOX.id) {
           // 空の段ボール：棚の商品を詰めて運ぶ（模様替え・棚の入れ替え用）
           const have = st.boxes.filter((b) => b.n <= 0).length;
@@ -199,6 +199,7 @@ export class GameUI {
     tabs.classList.add('head-tabs'); m.el.querySelector('.modal-head').insertBefore(tabs, m.el.querySelector('.modal-head .x'));
     this.opened(m); draw();
     this._redraw = draw;
+    this._live = () => { if (tab === 'order' || tab === 'rep') draw(); }; // 在庫・配送中・口コミは開いたままでも新しく
   }
   refresh() { this._redraw && this.open && this._redraw(); }
   // ---------- 評判と口コミ（どこにいても見られる） ----------
@@ -207,7 +208,7 @@ export class GameUI {
     const draw = () => { const keep = body.querySelector('.rv-list')?.scrollTop || 0; body.innerHTML = ''; body.append(repPanel(g.store)); const l = body.querySelector('.rv-list'); if (l) l.scrollTop = keep; };
     const m = modal('💬 評判と口コミ', [body], { wide: true, cls: 'pcm rep', onClose: () => this.closed() });
     this.opened(m); draw();
-    this._redraw = draw;
+    this._redraw = draw; this._live = draw;
   }
 
   openPrice(pid) {
@@ -238,7 +239,14 @@ export class GameUI {
     setTimeout(() => inp.focus(), 60);
   }
   opened(m) { if (this.open && this.open !== m) { const o = this.open; this.open = null; try { o.close(); } catch (e) { /* noop */ } } this.open = m; this.g.setUIBlock(true); }
-  closed() { this.open = null; this._redraw = null; this.g.setUIBlock(false); }
+  closed() { this.open = null; this._redraw = null; this._live = null; this.g.setUIBlock(false); }
+  // 開いている画面を新しくする（さわっている最中は待つ：ボタンが作り直されて押せなくならないように）。新しくできたら true
+  live() {
+    if (!this.open || !this._live) return true;
+    if (!this._touchWatch) { this._touchWatch = true; const t = () => { this._touchT = performance.now(); }; for (const ev of ['pointerdown', 'pointerup', 'wheel', 'touchmove']) document.addEventListener(ev, t, { capture: true, passive: true }); }
+    if (performance.now() - (this._touchT || 0) < 900) return false;
+    this._live(); return true;
+  }
   closeAll() { if (this.open) { const o = this.open; this.open = null; o.close(); } }
 
   // ---------- 店舗拡張ボード ----------
@@ -510,17 +518,20 @@ function chatLine(c) { return h('div', { class: 'cline' }, h('b', {}, (c.n || '?
 const stat = (k, v) => h('div', { class: 'stat' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, String(v)));
 
 // 在庫：棚に並んでいる数と、倉庫など（段ボールの中）にある数
-function stockMap(st) {
+// 商品ごとの在庫：棚に並んでいる数＋段ボールの中の数（倉庫・店の前・手に持っている箱も）。配送中の分は別に
+function stockMap(st, dyn) {
   const m = new Map();
-  const get = (p) => { let e = m.get(p); if (!e) { e = { shelf: 0, back: 0, boxes: 0 }; m.set(p, e); } return e; };
-  for (const f of st.fixtures) if (f.s) for (const [p, n] of f.s) if (p && n > 0) get(p).shelf += n;
-  for (const b of st.boxes) if (b.n > 0) { const e = get(b.p); e.back += b.n; e.boxes++; }
+  const get = (p) => { let e = m.get(p); if (!e) { e = { shelf: 0, back: 0, boxes: 0, coming: 0 }; m.set(p, e); } return e; };
+  for (const f of st.fixtures) if (f.s) for (const [p, n] of f.s) if (p && PRODUCTS[p] && n > 0) get(p).shelf += n;
+  for (const b of st.boxes) if (b.n > 0 && PRODUCTS[b.p]) { const e = get(b.p); e.back += b.n; e.boxes++; }
+  for (const d of dyn?.deliveries || []) for (const [p, n, half] of d.items || []) if (PRODUCTS[p]) get(p).coming += n * (half ? halfQty(p) : PRODUCTS[p].qty);
   return m;
 }
 function stockLine(sm, pid) {
   const e = sm.get(pid);
-  if (!e || (!e.shelf && !e.back)) return h('div', { class: 'pstock none' }, '在庫 0');
-  return h('div', { class: 'pstock' }, `在庫 ${e.shelf + e.back}（棚${e.shelf}・倉庫${e.back}${e.boxes ? `/${e.boxes}箱` : ''}）`);
+  const coming = e?.coming ? h('span', { class: 'coming' }, ` 🚚+${e.coming}`) : null;
+  if (!e || (!e.shelf && !e.back)) return h('div', { class: 'pstock none' }, '在庫 0', coming);
+  return h('div', { class: 'pstock' }, `在庫 ${e.shelf + e.back}（棚${e.shelf}・箱${e.back}${e.boxes ? `/${e.boxes}箱` : ''}）`, coming);
 }
 // 相場の上下を表示
 function trend(st, pid) {
@@ -565,7 +576,7 @@ function priceRow(g, st, p, stocked, redraw, big, sm) {
     h('div', { class: 'pe' }, p.icon),
     h('div', { class: 'pinfo' }, h('div', { class: 'pn' }, p.name + (stocked ? '' : ' （未陳列）') + (auto ? ' 🔄' : '')),
       h('div', { class: 'muted small' }, `相場 ${yen(mk)} `, trend(st, p.id), ` ／ 仕入 ${yen(cost)} ／ 利益 ${yen(cur - cost)} ／ 売れる上限 ${yen(lim)}`),
-      h('div', { class: 'pmood ' + mood[1] }, mood[0] + (auto ? '（相場に自動で合わせ中）' : ''), e ? h('span', { class: 'pstock inl' }, ` 在庫 ${e.shelf + e.back}（棚${e.shelf}・倉庫${e.back}）`) : null)),
+      h('div', { class: 'pmood ' + mood[1] }, mood[0] + (auto ? '（相場に自動で合わせ中）' : ''), e ? h('span', { class: 'pstock inl' }, ` 在庫 ${e.shelf + e.back}（棚${e.shelf}・箱${e.back}）`) : null)),
     h('div', { class: 'pctl' },
       h('button', { onclick: () => set(cur - step) }, '−'), h('b', {}, yen(cur)), h('button', { onclick: () => set(cur + step) }, '＋')),
     big ? h('div', { class: 'row wrap' },
