@@ -1,7 +1,7 @@
 // ===== 描画：店の状態 → 3Dシーン =====
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { FIXTURES, PRODUCTS, BOX_SIZES, boxProd, slotPositions, marketPrice, tagLocal, BUILDING } from './data.js';
+import { FIXTURES, PRODUCTS, BOX_SIZES, boxProd, boxLook, slotPositions, marketPrice, tagLocal, BUILDING } from './data.js';
 const SUN_C = [(BUILDING.minX + BUILDING.maxX) / 2 + 2, (BUILDING.minZ + BUILDING.maxZ) / 2 - 1]; // 影を落とす範囲の中心（右の外のトラックも入るよう少し右）
 import { buildFixture, getBeltTex } from './models/fixtures.js';
 import { productParts, productMesh } from './models/products.js';
@@ -351,7 +351,7 @@ export class Renderer {
     if (!this._boxT0) this._boxT0 = now;
     const ready = now - this._boxT0 > 1.5; // 最初に読み込んだ箱は降らせない
     for (const b of store.boxes) {
-      const p = boxProd(b.p);
+      const look = boxLook(b), p = boxProd(look); // 空になった箱は無地の空き箱に見せる
       const L = b.loc;
       if (!this._seenBox.has(b.id)) {
         this._seenBox.add(b.id);
@@ -394,7 +394,7 @@ export class Renderer {
         const off = new THREE.Vector3(0, 0.98 * ch.av.height, 0.38).applyEuler(_e);
         _m.compose(_v.copy(o.position).add(off), _q.setFromEuler(_e), _s);
       } else continue;
-      this.boxes.push(b.o ? b.p + '|o' : b.p, _m, b.id);
+      this.boxes.push(b.o ? look + '|o' : look, _m, b.id);
       // 開いている箱は中身が見える
       if (b.o && b.n > 0) {
         const lay = inBoxLayout(b.p), n = Math.min(b.n, lay.length);
@@ -692,7 +692,7 @@ export class Renderer {
       const big = f.t === 'checkout' || d.d >= 1;
       put('r', f.x, f.z, d.w * 1.35 + 0.3, d.d * 1.35 + (big ? 0.3 : 0.45), f.r * Math.PI / 2);
     }
-    for (const b of store.boxes) if (b.loc.t === 'f' && b.loc.y < 0.05) { const s = BOX_SIZES[boxProd(b.p).bx]; put('r', b.loc.x, b.loc.z, s[0] * 1.6, s[2] * 1.6, b.loc.ry || 0); }
+    for (const b of store.boxes) if (b.loc.t === 'f' && b.loc.y < 0.05) { const s = BOX_SIZES[boxProd(boxLook(b)).bx]; put('r', b.loc.x, b.loc.z, s[0] * 1.6, s[2] * 1.6, b.loc.ry || 0); }
     for (const [x, z] of extra) put('c', x, z, 0.85, 0.85);
     this.blobs.end();
   }

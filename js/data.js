@@ -278,6 +278,8 @@ export const BOX_SIZES = { s: [0.4, 0.22, 0.3], m: [0.5, 0.3, 0.36], l: [0.58, 0
 export const EMPTY_BOX = { id: '_box', name: '空の段ボール', icon: '📦', bx: 'm', qty: 0, color: '#9a7448', place: [], cat: '' };
 export const EMPTY_BOX_PRICE = 200; // 1箱（リサイクルより高い）
 export const boxProd = (pid) => PRODUCTS[pid] || EMPTY_BOX;
+// 段ボールの見た目：中身が入っている箱はその商品の箱、空になった箱は無地の空き箱（中身があるように見えないように）
+export const boxLook = (b) => (b.n > 0 && PRODUCTS[b.p] ? b.p : EMPTY_BOX.id);
 
 // ---------- 設備 ----------
 function shelfSlots(levels, ys, w, d, h, cols, kind, sides = [1], depth = 0.5) {

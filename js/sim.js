@@ -4,7 +4,7 @@ import {
   OPEN_TIME, GAME_MIN_PER_SEC, SPAWN_POINTS, PLAYER_BOUNDS, START_BAYS, START_STOCK, OLD_BACK_Z, OLD_STOCK_Z, V12_STOCK_Z, V13, OLD_START_BAYS_V8, STAFF_HOME, SALES, STOCK_SECTIONS, bayAt, snapFixture,
   getWalls, zones, keepClear, expandTargets, fixtureFootprint, marketPrice, marketCost, OLD_LICENSES, slotCapacity, slotAccess, rackAccess, checkoutSpot, canPlace,
   staffLimit, STAFF_SLOTS, slotWage, staffSlotOpen, checkoutLimit, closeTime, xpNeed, costMult, productUnlocked, fixtureUnlocked, localToWorld, CELL, TRASH_TYPES, ORDER_MAX_BOXES, SHIPPING_FEE,
-  MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits, wageFor, MANAGER, XP_YEN, BUILDING, EMPTY_BOX, EMPTY_BOX_PRICE, boxProd,
+  MAX_LEVEL, spForLevel, spTotalNew, spTotalOld, SELF_MAX, boxUnits, wageFor, MANAGER, XP_YEN, BUILDING, EMPTY_BOX, EMPTY_BOX_PRICE, boxProd, boxLook,
 } from './data.js';
 import { NavGrid } from './nav.js';
 import { rand, randi, pick, dist, dist2, clamp } from './util.js';
@@ -458,7 +458,7 @@ export class Sim {
     let y = 0;
     for (const o of this.store.boxes) {
       if (o === self || o.loc.t !== 'f') continue;
-      if (Math.abs(o.loc.x - x) < 0.4 && Math.abs(o.loc.z - z) < 0.35) y = Math.max(y, o.loc.y + BOX_SIZES[boxProd(o.p).bx][1]);
+      if (Math.abs(o.loc.x - x) < 0.4 && Math.abs(o.loc.z - z) < 0.35) y = Math.max(y, o.loc.y + BOX_SIZES[boxProd(boxLook(o)).bx][1]);
     }
     return Math.min(y, 2.4);
   }
@@ -1243,8 +1243,8 @@ export class Sim {
     if (!this.staffIdle(rt, dt)) return;
     if (!this.nearestTrash(rt.x, rt.z)) { rt.msg = 'trash'; return; }
     const claimed = new Set(this.store.staff.filter((o) => o !== s).map((o) => this.dyn.staffRt[o.id]?.bid));
-    // 買った空き箱（まだ使っていない）と、在庫棚にしまった空き箱は捨てない（模様替え用）
-    const empty = this.store.boxes.filter((b) => b.n <= 0 && b.loc.t === 'f' && b.p !== EMPTY_BOX.id && !claimed.has(b.id));
+    // 空になった箱は床からも在庫棚からも捨てる。買ったまま使っていない空き箱は捨てない（模様替え用）
+    const empty = this.store.boxes.filter((b) => b.n <= 0 && (b.loc.t === 'f' || b.loc.t === 'r') && b.p !== EMPTY_BOX.id && !claimed.has(b.id));
     if (!empty.length) { rt.msg = null; rt.t = 1.2; return; }
     empty.sort((a, b) => { const [ax, az] = this.boxAccess(a), [bx, bz] = this.boxAccess(b); return dist2(rt.x, rt.z, ax, az) - dist2(rt.x, rt.z, bx, bz); });
     for (const b of empty.slice(0, 4)) { const [bx, bz] = this.boxAccess(b); if (this.goto(rt, bx, bz)) { rt.st = 'tobox'; rt.bid = b.id; rt.msg = null; return; } }
@@ -1332,6 +1332,13 @@ export class Sim {
         if (stepPath(rt, dt, spd)) { held.loc = { t: 'f', x: rt.fx2, y: this.stackHeight(rt.fx2, rt.fz2, held), z: rt.fz2, ry: 0 }; this.sfx('place', rt.x, rt.z); this.bump(); rt.st = 'idle'; rt.t = 0.5; }
         return;
       }
+      case 'toempty': {
+        // 在庫棚の空き箱を取る → return で（空なので）ゴミ箱へ
+        const b = this.box(rt.bid);
+        if (!b || b.loc.t !== 'r' || b.n > 0) { rt.st = 'idle'; rt.t = 0.3; return; }
+        if (stepPath(rt, dt, spd)) { b.loc = { t: 'h', who }; b.o = false; this.sfx('pick', rt.x, rt.z); this.bump(); rt.st = 'return'; }
+        return;
+      }
       case 'tostore': {
         // 外や倉庫の床に置きっぱなしの箱を取りに行く → 在庫棚へ
         const b = this.box(rt.bid);
@@ -1364,6 +1371,9 @@ export class Sim {
           // 補充することがなければ、余った商品の箱を在庫棚へ片付ける
           const sj = this.findStoreJob(rt, s);
           if (sj) { const [bx, bz] = this.boxAccess(sj); if (this.goto(rt, bx, bz)) { rt.st = 'tostore'; rt.bid = sj.id; rt.msg = null; return; } }
+          // ゴミ捨て係がいないときは、在庫棚の空になった箱をゴミ箱へ（棚をあける）
+          const ej = this.findRackEmpty(rt, s);
+          if (ej) { const [bx, bz] = this.boxAccess(ej); if (this.goto(rt, bx, bz)) { rt.st = 'toempty'; rt.bid = ej.id; rt.msg = null; return; } }
           rt.msg = this._noStock ? 'nobox' : null; return;
         }
         rt.msg = null;
@@ -1371,6 +1381,19 @@ export class Sim {
         if (this.goto(rt, bx, bz)) { rt.st = 'tobox'; rt.bid = job.b.id; rt.fid = job.f.id; rt.si = job.si; }
       }
     }
+  }
+  // 在庫棚にある空になった箱（ゴミ捨て係がいないとき品出し係が捨てる。買ったまま使っていない空き箱は残す）
+  findRackEmpty(rt, me) {
+    const st = this.store;
+    if (st.staff.some((o) => o.role === 'cleaner') || !this.nearestTrash(rt.x, rt.z)) return null;
+    const claimed = new Set(st.staff.filter((o) => o !== me).map((o) => this.dyn.staffRt[o.id]?.bid).filter(Boolean));
+    let best = null, bd = 1e9;
+    for (const b of st.boxes) {
+      if (b.loc.t !== 'r' || b.n > 0 || b.p === EMPTY_BOX.id || claimed.has(b.id)) continue;
+      const [x, z] = this.boxAccess(b), d = dist2(rt.x, rt.z, x, z);
+      if (d < bd) { bd = d; best = b; }
+    }
+    return best;
   }
   // 片付ける箱：店の外（荷物置き場など）に置いてある箱と、在庫棚に空きがあるときの倉庫の床の箱（売り場の床の箱はプレイヤーが使っているかもしれないので触らない）
   findStoreJob(rt, me) {

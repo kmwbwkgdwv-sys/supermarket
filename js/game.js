@@ -340,7 +340,7 @@ export class Game {
     const drop = { label: '床に置く', fn: () => this.act({ t: 'drop', ...this.dropPoint() }) };
     if (held) {
       const p = boxProd(held.p), empty = held.n <= 0;
-      A.info = empty ? `📦 <b>空の段ボール</b>${PRODUCTS[held.p] ? `（${p.icon} ${p.name}の箱）` : ''}${held.o ? '（開いている）' : '（閉じている）'}<br>棚の商品を1種類だけ詰めて運べます（模様替えに）`
+      A.info = empty ? `📦 <b>空の段ボール</b>${held.o ? '（開いている）' : '（閉じている）'}<br>棚の商品を1種類だけ詰めて運べます（模様替えに）`
         : `📦 <b>${p.icon} ${p.name}</b> 残り ${held.n}/${p.qty}${held.o ? '（開いている）' : '（閉じている）'}`;
       A.box = { label: held.o ? '閉じる' : '開ける', fn: () => this.act({ t: 'boxOpen', open: !held.o }) };
       if (t?.type === 'fixture' && t.si != null && t.si >= 0 && empty) {
