@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { tex, surf, signTexture, canvasTex, emoji, FONT, shade } from '../textures.js';
 import { mat, smat, glassMat, T, box, rbox, cyl, sph, plane, cone, torus, add, M, bakeGroup, merge, vgrad, wuv } from './geo.js';
 import { basic } from './fixtures.js';
-import { SALES, SALES_X1, BAY, STRIP, STOCK_SECTIONS, MANAGER, DOCK, DOOR, BUILDING, BACK_Z, ALL_BAYS, DELIVERY_AREA, PLAYER_BOUNDS, bayRect, bayAt, getWalls } from '../data.js';
+import { SALES, SALES_X1, BAY, STRIP, STOCK_SECTIONS, MANAGER, DOCK, DOOR, BUILDING, BACK_Z, ALL_BAYS, DELIVERY_AREA, PLAYER_BOUNDS, bayRect, bayAt, getWalls, doorOpen } from '../data.js';
 import { mulberry32 } from '../util.js';
 
 const C = (c, o = {}) => mat(c, { r: 0.7, ...o });
@@ -351,9 +351,8 @@ export class World {
     // 倉庫入口の上の壁とのれん・表示
     const strip = new THREE.MeshStandardMaterial({ color: 0xd8eef7, transparent: true, opacity: 0.32, roughness: 0.2, side: THREE.DoubleSide, depthWrite: false });
     for (const s of STOCK_SECTIONS) {
+      if (!doorOpen(store, s)) continue; // 出入口は倉庫1の1つだけ
       const cz = (s.door[0] + s.door[1]) / 2, w = s.door[1] - s.door[0];
-      const open = store.stock?.[s.id] && store.bays?.[bayAt(STRIP.x0 - 1, cz)];
-      if (!open) continue;
       add(g, wuv(T(box(0.24, CEIL - 2.5, w), STRIP.x0, 2.5, cz), PT), paint);
       add(g, T(plane(1.6, 0.36), STRIP.x0 - 0.13, 2.75, cz, 0, -Math.PI / 2), basic(signTexture(s.r === 1 ? '倉庫・パソコン室' : 'STAFF ONLY', { w: 512, h: 128, bg: '#3a3f45', fg: '#ffd23f', radius: 20 })));
       for (let z = s.door[0] + 0.12; z < s.door[1]; z += 0.22) { const st = M(T(plane(0.2, 2.35), STRIP.x0, 1.27, z, 0, Math.PI / 2 + 0.12), strip, false); st.userData.noRay = true; D.add(st); }

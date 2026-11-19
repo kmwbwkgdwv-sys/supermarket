@@ -11,7 +11,7 @@ import { rand, randi, pick, dist, dist2, clamp } from './util.js';
 
 export function newStore(name) {
   const st = {
-    v: 14, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
+    v: 15, name: name || 'マートメイツ', money: 40000, day: 1, level: 1, xp: 0, sp: 1, rep: 50,
     skills: { start: true, prod_food1: true }, prices: {}, market: {}, marketPrev: {}, staff: [], nid: 100, phase: 'prep', time: OPEN_TIME,
     totalSales: 0, totalCustomers: 0, rev: 1, created: Date.now(), color: '#ff6b35',
     today: { sales: 0, served: 0, lost: 0, orders: 0, ship: 0, xp: 0, vend: 0, recycle: 0 },
@@ -194,6 +194,15 @@ export function normalizeStore(st) {
     // v14：倉庫とパソコン室を店の右側へ。売り場は左と奥に広げる形に（最大 40m×20m）
     migrateV14(st);
     st.v = 14;
+  }
+  if (st.v < 15) {
+    // v15：倉庫2・3の売り場側の出入口をなくした（出入口は倉庫1だけ）。その出入口に置いてあった段ボールは売り場側へ
+    const gaps = [[-7.6, -5.6], [-12.6, -10.6]], x0 = STOCK_SECTIONS[0].x0;
+    for (const o of [...(st.boxes || []), ...(st.crates || [])]) {
+      const L = o.loc; if (L?.t !== 'f') continue;
+      if (Math.abs(L.x - x0) < 0.45 && gaps.some(([a, b]) => L.z > a - 0.3 && L.z < b + 0.3)) { L.x = x0 - 0.55; L.y = 0; }
+    }
+    st.v = 15;
   }
   // 持ったままの大きい段ボールは店の前に戻す
   for (const c of st.crates) if (c.loc?.t !== 'f') c.loc = crateSpot(st);

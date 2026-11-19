@@ -11,8 +11,9 @@ export const MANAGER = { x0: STRIP.x0, x1: STRIP.x1, z0: 1, z1: 6, door: [7, 8.6
 // 倉庫の区画（右の列を手前から奥へ）。door：売り場との壁(x=STRIP.x0)の出入口のz
 export const STOCK_SECTIONS = [
   { id: 'sr1', name: '倉庫1', r: 1, x0: STRIP.x0, x1: STRIP.x1, z0: -4, z1: 1, door: [-2.6, -0.6] },
-  { id: 'sr2', name: '倉庫2', r: 2, x0: STRIP.x0, x1: STRIP.x1, z0: -9, z1: -4, door: [-7.6, -5.6] },
-  { id: 'sr3', name: '倉庫3', r: 3, x0: STRIP.x0, x1: STRIP.x1, z0: -14, z1: -9, door: [-12.6, -10.6] },
+  // 売り場からの出入口は倉庫1の1つだけ。倉庫2・3は倉庫1から奥へつながる（出入口は増えない）
+  { id: 'sr2', name: '倉庫2', r: 2, x0: STRIP.x0, x1: STRIP.x1, z0: -9, z1: -4, door: null },
+  { id: 'sr3', name: '倉庫3', r: 3, x0: STRIP.x0, x1: STRIP.x1, z0: -14, z1: -9, door: null },
 ];
 export const STOCK_COLS = 1, STOCK_ROWS = STOCK_SECTIONS.length;
 export const stockAt = (c, r) => (c === 0 ? STOCK_SECTIONS.find((s) => s.r === r) : null);
@@ -84,7 +85,7 @@ export function expandCost(store, id) {
   const n = Math.max(0, Object.keys(store.stock || {}).length - START_STOCK.length); return Math.round(30000 * Math.pow(1.3, n) / 500) * 500;
 }
 // 倉庫の出入口が開いているか（倉庫と、出入口の前の売り場の両方を使っているとき）
-export const doorOpen = (store, s) => !!(store?.stock?.[s.id] && store?.bays?.[bayAt(STRIP.x0 - 1, (s.door[0] + s.door[1]) / 2)]);
+export const doorOpen = (store, s) => !!(s.door && store?.stock?.[s.id] && store?.bays?.[bayAt(STRIP.x0 - 1, (s.door[0] + s.door[1]) / 2)]);
 // 置けない場所（入口・通路・荷受け場の確保）
 export function keepClear(store) {
   const k = [
